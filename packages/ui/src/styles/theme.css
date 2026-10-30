@@ -1,0 +1,273 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+  ─────────────────────────────────────────────────────────────
+  Design tokens de 3B  (base shadcn/ui · Tailwind v4)
+  ─────────────────────────────────────────────────────────────
+  Paleta de marca tomada del Playbook de 3B (v1.0). Los colores se
+  expresan en oklch; entre paréntesis queda el hex original.
+
+  Significado por rol (clave en toda la app):
+    --primary  #004D34  verde      → Movers
+    --accent   #FFAD14  ámbar      → Sellers
+    --brand    #BC3908  rojo-teja  → Makers (y precios en oferta)
+
+  Cómo funciona:
+  - :root y .dark definen las variables crudas (oklch).
+  - @theme inline las mapea a utilidades de Tailwind
+    (ej: --color-primary -> bg-primary, text-primary).
+
+  Reglas de diseño de 3B (ver CLAUDE.md):
+  - Radio: estándar 6px, máximo 8px. Nunca totalmente redondeado.
+  - Superficies elevadas (modales, sidesheets, popovers, dropdowns,
+    selects abiertos, navbar, sidebar): usar .glass / .glass-bar.
+  - Sin cambios de estado instantáneos: usar las easings/duraciones
+    de motion. Sin spinners genéricos.
+  ─────────────────────────────────────────────────────────────
+*/
+
+:root {
+  /* Radio — estándar 6px, tope 8px */
+  --radius: 0.375rem; /* 6px */
+
+  /* Color — modo claro */
+  --background: oklch(0.963 0.022 104.6); /* crema cálido, algo más claro que #F0EFDB */
+  --foreground: oklch(0.279 0.080 44.9); /* #471800 marrón oscuro */
+
+  --card: oklch(0.985 0.012 104.6);
+  --card-foreground: oklch(0.279 0.080 44.9);
+  --popover: oklch(0.985 0.012 104.6);
+  --popover-foreground: oklch(0.279 0.080 44.9);
+
+  --field: oklch(1 0 0); /* fondo de inputs/selects: blanco, para legibilidad */
+
+  --primary: oklch(0.372 0.080 163.3); /* #004D34 verde british · acción principal (y rol Movers) */
+  --primary-foreground: oklch(0.948 0.026 104.6);
+
+  --secondary: oklch(0.905 0.038 96);
+  --secondary-foreground: oklch(0.279 0.080 44.9);
+
+  --muted: oklch(0.915 0.030 100);
+  --muted-foreground: oklch(0.505 0.050 50);
+
+  --accent: oklch(0.807 0.168 74.1); /* #FFAD14 ámbar · Sellers */
+  --accent-foreground: oklch(0.279 0.080 44.9);
+
+  --brand: oklch(0.534 0.175 36.9); /* #BC3908 rojo-teja · Makers */
+  --brand-foreground: oklch(0.948 0.026 104.6);
+
+  --destructive: oklch(0.534 0.175 36.9); /* #BC3908 naranja terracota */
+  --destructive-foreground: oklch(0.948 0.026 104.6);
+
+  --border: oklch(0.860 0.030 90);
+  --input: oklch(0.830 0.034 85);
+  --ring: oklch(0.807 0.168 74.1); /* anillo de foco = ámbar */
+
+  --chart-1: oklch(0.372 0.080 163.3);
+  --chart-2: oklch(0.807 0.168 74.1);
+  --chart-3: oklch(0.534 0.175 36.9);
+  --chart-4: oklch(0.450 0.070 50);
+  --chart-5: oklch(0.640 0.095 150);
+
+  --sidebar: oklch(0.935 0.028 100);
+  --sidebar-foreground: oklch(0.279 0.080 44.9);
+  --sidebar-primary: oklch(0.372 0.080 163.3);
+  --sidebar-primary-foreground: oklch(0.948 0.026 104.6);
+  --sidebar-accent: oklch(0.905 0.038 96);
+  --sidebar-accent-foreground: oklch(0.279 0.080 44.9);
+  --sidebar-border: oklch(0.860 0.030 90);
+  --sidebar-ring: oklch(0.807 0.168 74.1);
+
+  /* Glassmorfismo — vidrio esmerilado para superficies elevadas */
+  --glass-bg: oklch(0.975 0.018 100 / 0.72);
+  --glass-bar-bg: oklch(0.968 0.020 100 / 0.80);
+  --glass-bg-solid: oklch(0.980 0.015 100); /* fallback sin backdrop-filter */
+  --glass-border: oklch(1 0 0 / 0.5);
+  --glass-blur: 20px;
+  --glass-blur-strong: 28px;
+  --glass-shadow: 0 8px 32px -12px oklch(0.279 0.080 45 / 0.28),
+    inset 0 1px 0 0 oklch(1 0 0 / 0.5);
+
+  /* Motion — nada de cambios de estado instantáneos */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+  --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-ease-emphasized: cubic-bezier(0.3, 0.7, 0, 1);
+  --motion-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+}
+
+.dark {
+  /* Color — modo oscuro (fondo derivado de #471800 oscurecido, texto crema) */
+  --background: oklch(0.170 0.030 46);
+  --foreground: oklch(0.948 0.026 104.6);
+
+  --card: oklch(0.225 0.035 46);
+  --card-foreground: oklch(0.948 0.026 104.6);
+  --popover: oklch(0.225 0.035 46);
+  --popover-foreground: oklch(0.948 0.026 104.6);
+
+  --field: oklch(0.255 0.032 46); /* fondo de inputs/selects: superficie sólida oscura */
+
+  --primary: oklch(0.520 0.100 163); /* verde british algo más claro para contraste */
+  --primary-foreground: oklch(0.948 0.026 104.6);
+
+  --secondary: oklch(0.280 0.030 46);
+  --secondary-foreground: oklch(0.948 0.026 104.6);
+
+  --muted: oklch(0.280 0.030 46);
+  --muted-foreground: oklch(0.720 0.030 90);
+
+  --accent: oklch(0.807 0.168 74.1); /* mismo ámbar */
+  --accent-foreground: oklch(0.279 0.080 44.9);
+
+  --brand: oklch(0.600 0.185 36.9);
+  --brand-foreground: oklch(0.948 0.026 104.6);
+
+  --destructive: oklch(0.600 0.185 36.9); /* naranja terracota */
+  --destructive-foreground: oklch(0.948 0.026 104.6);
+
+  --border: oklch(0.950 0.020 100 / 12%);
+  --input: oklch(0.950 0.020 100 / 15%);
+  --ring: oklch(0.807 0.168 74.1);
+
+  --chart-1: oklch(0.520 0.100 163);
+  --chart-2: oklch(0.807 0.168 74.1);
+  --chart-3: oklch(0.600 0.185 36.9);
+  --chart-4: oklch(0.620 0.070 50);
+  --chart-5: oklch(0.700 0.095 150);
+
+  --sidebar: oklch(0.200 0.032 46);
+  --sidebar-foreground: oklch(0.948 0.026 104.6);
+  --sidebar-primary: oklch(0.520 0.100 163);
+  --sidebar-primary-foreground: oklch(0.948 0.026 104.6);
+  --sidebar-accent: oklch(0.280 0.030 46);
+  --sidebar-accent-foreground: oklch(0.948 0.026 104.6);
+  --sidebar-border: oklch(0.950 0.020 100 / 12%);
+  --sidebar-ring: oklch(0.807 0.168 74.1);
+
+  /* Glassmorfismo — modo oscuro */
+  --glass-bg: oklch(0.225 0.035 46 / 0.70);
+  --glass-bar-bg: oklch(0.205 0.032 46 / 0.80);
+  --glass-bg-solid: oklch(0.230 0.035 46);
+  --glass-border: oklch(1 0 0 / 0.14);
+  --glass-shadow: 0 8px 32px -12px oklch(0 0 0 / 0.55),
+    inset 0 1px 0 0 oklch(1 0 0 / 0.08);
+}
+
+@theme inline {
+  /* Radios — tope en 8px (lg/xl no superan el máximo) */
+  --radius-sm: calc(var(--radius) - 2px); /* 4px */
+  --radius-md: var(--radius); /* 6px · estándar */
+  --radius-lg: calc(var(--radius) + 2px); /* 8px · máximo */
+  --radius-xl: calc(var(--radius) + 2px); /* 8px · (capado) */
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-field: var(--field);
+  --color-ring: var(--ring);
+
+  /* Alias semánticos por rol */
+  --color-mover: var(--primary);
+  --color-seller: var(--accent);
+  --color-maker: var(--brand);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Easings de motion (utilidades ease-standard / ease-emphasized / ease-exit) */
+  --ease-standard: var(--motion-ease-standard);
+  --ease-emphasized: var(--motion-ease-emphasized);
+  --ease-exit: var(--motion-ease-exit);
+}
+
+@layer components {
+  /*
+    .glass — superficies elevadas (modales, sidesheets, popovers,
+    dropdowns, selects abiertos). Vidrio esmerilado estilo liquid glass.
+    Uso: aplicar la clase en vez de un bg-* sólido; el radio y el padding
+    se componen con utilidades de Tailwind.
+  */
+  .glass {
+    background-color: var(--glass-bg);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+  }
+
+  /*
+    .glass-bar — barras persistentes (navbar, sidebar). Más opaca y con
+    blur más fuerte; sin la sombra flotante de los elementos emergentes.
+  */
+  .glass-bar {
+    background-color: var(--glass-bar-bg);
+    -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(180%);
+    backdrop-filter: blur(var(--glass-blur-strong)) saturate(180%);
+    border: 1px solid var(--glass-border);
+  }
+}
+
+/* Fallback: si el navegador no soporta backdrop-filter, usar superficie sólida */
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  .glass,
+  .glass-bar {
+    background-color: var(--glass-bg-solid);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  /* Accesibilidad: respetar la preferencia de menos movimiento */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

@@ -1,8 +1,8 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import tailwindcss from '@tailwindcss/vite';
-import dts from 'vite-plugin-dts';
 import { resolve } from 'node:path';
+import tailwindcss from '@tailwindcss/vite';
+import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vite';
+import dts from 'vite-plugin-dts';
 
 // El design system se construye en modo librería: `vite build` genera `dist/`
 // listo para consumir desde la app de 3B. `vite dev` sirve el playground.

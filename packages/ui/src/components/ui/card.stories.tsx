@@ -1,13 +1,13 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { Button } from './button';
 import {
   Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
 } from './card';
-import { Button } from './button';
 import { Input } from './input';
 import { Label } from './label';
 
