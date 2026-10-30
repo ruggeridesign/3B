@@ -1,0 +1,5 @@
+/* Tokens y estilos del Design System de 3B (Tailwind v4). */
+@import '@3b/ui/styles/theme.css';
+
+/* Clases usadas por el Design System (fuera de apps/web) que Tailwind debe escanear. */
+@source '../../../packages/ui/src';

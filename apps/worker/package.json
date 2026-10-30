@@ -1,0 +1,10 @@
+{
+  "name": "@3b/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Worker de 3B (BullMQ + outbox + cron). Preparado para fases posteriores; no se ejecuta aún.",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

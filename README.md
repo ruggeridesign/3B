@@ -28,13 +28,13 @@ npm run dev          # playground de Vite en http://localhost:5173
 
 ## Scripts
 
-| Script                    | Descripción                                             |
-| ------------------------- | ------------------------------------------------------- |
-| `npm run dev`             | Playground de desarrollo (Vite).                        |
-| `npm run storybook`       | Storybook para ver/documentar componentes.              |
-| `npm run build`           | Compila el design system a `dist/` (modo librería).     |
-| `npm run build-storybook` | Genera Storybook estático en `storybook-static/`.       |
-| `npm run typecheck`       | Chequeo de tipos con TypeScript.                        |
+| Script                    | Descripción                                         |
+| ------------------------- | --------------------------------------------------- |
+| `npm run dev`             | Playground de desarrollo (Vite).                    |
+| `npm run storybook`       | Storybook para ver/documentar componentes.          |
+| `npm run build`           | Compila el design system a `dist/` (modo librería). |
+| `npm run build-storybook` | Genera Storybook estático en `storybook-static/`.   |
+| `npm run typecheck`       | Chequeo de tipos con TypeScript.                    |
 
 ## Estructura
 
