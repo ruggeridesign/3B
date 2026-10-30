@@ -1,0 +1,28 @@
+{
+  "name": "@3b/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Lógica de negocio de 3B, organizada por módulos (domain / application / http / infra).",
+  "exports": {
+    ".": "./src/index.ts",
+    "./http": "./src/http.ts",
+    "./modules/system": "./src/modules/system/index.ts",
+    "./modules/identity": "./src/modules/identity/index.ts",
+    "./modules/admin": "./src/modules/admin/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
+  },
+  "dependencies": {
+    "@3b/contracts": "workspace:*",
+    "@3b/db": "workspace:*",
+    "@hono/zod-openapi": "^1.6.3",
+    "hono": "^4.13.14"
+  },
+  "devDependencies": {
+    "@3b/config": "workspace:*"
+  }
+}

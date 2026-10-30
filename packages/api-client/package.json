@@ -1,0 +1,20 @@
+{
+  "name": "@3b/api-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cliente HTTP tipado para la API de 3B. Tipos respaldados por @3b/contracts; migrable a generación desde OpenAPI.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "gen": "openapi-typescript http://localhost:8787/openapi.json -o ./src/openapi.gen.ts"
+  },
+  "dependencies": {
+    "@3b/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0"
+  }
+}
