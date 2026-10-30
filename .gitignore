@@ -5,11 +5,18 @@ node_modules
 dist
 dist-ssr
 storybook-static
+out
+.next
+next-env.d.ts
 *.tsbuildinfo
+
+# Generados (OpenAPI, etc.)
+*.gen.ts
 
 # Cache
 .vite
 .cache
+.turbo
 
 # Logs
 *.log

@@ -1,0 +1,12 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+allowBuilds:
+  esbuild: true
+  '@tailwindcss/oxide': true
+  '@swc/core': true
+  sharp: true
+  '@parcel/watcher': true
+  unrs-resolver: true
+minimumReleaseAgeExclude:
+  - lucide-react@1.64.0
