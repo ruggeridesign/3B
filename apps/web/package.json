@@ -15,6 +15,7 @@
     "@3b/contracts": "workspace:*",
     "@3b/ui": "workspace:*",
     "@tailwindcss/postcss": "^4.3.3",
+    "better-auth": "^1.7.14",
     "next": "^16.4.3",
     "postcss": "^8.5.32",
     "react": "^19.3.1",

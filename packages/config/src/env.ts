@@ -19,6 +19,8 @@ const envSchema = z.object({
     .default('postgresql://app:app@localhost:5433/3b'),
   API_PORT: z.coerce.number().int().positive().default(8787),
   NEXT_PUBLIC_API_URL: z.string().url().default('http://localhost:8787'),
+  // Origen de la app web (para CORS / trustedOrigins de Better Auth).
+  WEB_URL: z.string().url().default('http://localhost:3000'),
 
   // Better Auth. El secret tiene un default SOLO para desarrollo local.
   BETTER_AUTH_SECRET: z

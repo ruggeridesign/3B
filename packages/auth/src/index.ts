@@ -17,6 +17,9 @@ const googleConfigured = Boolean(
 export const auth = betterAuth({
   baseURL: env.BETTER_AUTH_URL,
   secret: env.BETTER_AUTH_SECRET,
+  // El web (apps/web) consume la API vía proxy same-origin; su origen debe
+  // ser de confianza para Better Auth.
+  trustedOrigins: [env.WEB_URL],
   database: drizzleAdapter(db, {
     provider: 'pg',
     // Mapea los modelos de Better Auth a nuestras tablas (sin duplicar identidad).

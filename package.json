@@ -24,7 +24,7 @@
     "db:logs": "docker compose logs -f db",
     "db:migrate": "pnpm --filter @3b/db migrate",
     "db:seed": "pnpm --filter @3b/db seed",
-    "db:reset": "pnpm --filter @3b/db reset",
+    "db:reset": "pnpm --filter @3b/db reset && pnpm --filter @3b/auth seed",
     "test:integration": "pnpm db:reset && pnpm -r test:integration"
   },
   "devDependencies": {

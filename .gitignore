@@ -8,6 +8,7 @@ storybook-static
 out
 .next
 next-env.d.ts
+AGENTS.md
 *.tsbuildinfo
 
 # Generados (OpenAPI, etc.)
