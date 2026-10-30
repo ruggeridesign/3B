@@ -1,0 +1,17 @@
+# Normaliza finales de línea: el repo guarda LF y se hace checkout en LF
+# en todas las plataformas (evita ruido CRLF/LF entre colaboradores).
+* text=auto eol=lf
+
+# Binarios: sin conversión.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.avif binary
+*.svg text
+*.ico binary
+*.pdf binary
+
+# Lockfile: generado, no mostrar diffs ruidosos en PRs.
+pnpm-lock.yaml -diff linguist-generated
