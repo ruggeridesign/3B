@@ -1,0 +1,29 @@
+# Postgres 17 + PostGIS para desarrollo local de 3B.
+# Requiere Docker Desktop (WSL2). No es necesario para `pnpm check`;
+# se usa en la fase de datos (migraciones Drizzle, seed, tests de integración).
+#
+# El puerto se publica SOLO en localhost (127.0.0.1): la base no queda expuesta
+# a la red. Los scripts de infra/db/init/ se ejecutan al crear el contenedor.
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    container_name: 3b-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: 3b
+      POSTGRES_PASSWORD: 3b
+      POSTGRES_DB: 3b
+    # Puerto host 5433 (el 5432 lo ocupa un PostgreSQL nativo de la máquina).
+    ports:
+      - '127.0.0.1:5433:5432'
+    volumes:
+      - 3b-db-data:/var/lib/postgresql/data
+      - ./infra/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U 3b -d 3b']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  3b-db-data:

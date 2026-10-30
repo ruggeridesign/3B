@@ -1,0 +1,30 @@
+{
+  "name": "@3b/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Capa de datos de 3B (Drizzle ORM + PostgreSQL). Un esquema por módulo.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "generate": "drizzle-kit generate",
+    "migrate": "drizzle-kit migrate",
+    "seed": "tsx src/seed.ts",
+    "reset": "tsx src/reset.ts && drizzle-kit migrate && tsx src/seed.ts",
+    "test": "vitest run --passWithNoTests",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "@3b/config": "workspace:*",
+    "drizzle-orm": "^0.45.4",
+    "postgres": "^3.4.9"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.11",
+    "tsx": "^4.23.15"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1793311178117,
+      "tag": "0000_wealthy_professor_monster",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793331687823,
+      "tag": "0001_rls_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793383549129,
+      "tag": "0002_loud_pride",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793384475707,
+      "tag": "0003_old_morgan_stark",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793384477586,
+      "tag": "0004_audit_grants_rls",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@3b/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Contratos tipados de 3B (Zod): DTOs, enums y estados. Fuente única de verdad.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
+}
