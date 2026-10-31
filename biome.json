@@ -12,6 +12,7 @@
       "!**/*.css",
       "!**/*.yaml",
       "!**/*.yml",
+      "!**/*.md",
       "!**/dist",
       "!**/.next",
       "!**/storybook-static",
