@@ -12,6 +12,23 @@ plataforma. El design system vive como un paquete más (`@3b/ui`).
 - Apps: `@3b/web`, `@3b/api`, `@3b/worker` · Packages: `@3b/ui`, `@3b/core`,
   `@3b/db`, `@3b/contracts`, `@3b/api-client`, `@3b/auth`, `@3b/config`.
 
+## Documentación viva (DDR) — OBLIGATORIO
+
+Mantener el **DDR** (`docs/DDR.md`): historial cronológico inverso con **una
+entrada por commit / feature / decisión**, con contexto suficiente para que
+**cualquier IA o persona retome** el trabajo (qué, por qué, archivos, verificación,
+cómo seguir). Reglas:
+
+- **Cada vez que se cierra una unidad de trabajo que termina en commit**, agregar
+  su entrada **arriba** en `docs/DDR.md` con el formato documentado ahí. Fechas
+  **absolutas**. Enlazar archivos clave y el ADR si aplica.
+- Decisiones **arquitectónicas** profundas van en un **ADR** nuevo
+  (`docs/architecture/adr/`), y la entrada del DDR lo enlaza. El DDR es el diario;
+  los ADR son el detalle con alternativas y consecuencias.
+- Mantener al día el bloque **"Estado actual (para retomar rápido)"** del DDR.
+- Al empezar una sesión: leer el DDR (y `docs/architecture/data-model.md`) para
+  tomar contexto antes de tocar código.
+
 ## Stack y convenciones base
 
 - **TypeScript estricto** de punta a punta · **pnpm workspaces** + **Turborepo**.

@@ -1,0 +1,199 @@
+# DDR — Registro de Decisiones de Diseño y Producto (3B)
+
+> **Qué es esto.** Un historial vivo, en orden **cronológico inverso** (lo más
+> nuevo arriba), con **una entrada por commit / feature / decisión**. El objetivo
+> es que **cualquier persona o IA** pueda retomar el trabajo con contexto
+> suficiente: qué se hizo, **por qué**, qué tocó y **cómo seguir**.
+>
+> **Relación con los ADR.** Los [ADR](architecture/adr/) registran decisiones
+> **arquitectónicas** profundas (con alternativas y consecuencias). El DDR es el
+> **diario** del proyecto: cada commit/feature deja su rastro acá y, si la
+> decisión es estructural, enlaza al ADR correspondiente.
+>
+> **Cómo mantenerlo (obligatorio).** Al cerrar cada unidad de trabajo que termina
+> en commit, agregar una entrada **arriba** con el formato de abajo. Convertir
+> fechas relativas a absolutas. Enlazar archivos clave y ADR. Ver `CLAUDE.md`
+> → "Documentación viva (DDR)".
+
+## Formato de entrada
+
+```
+## <fecha> · `<hash>` · <tipo> — <título>
+- **Qué:** qué se construyó/cambió, en una o dos líneas.
+- **Por qué:** la razón / el problema que resuelve.
+- **Impacto / archivos:** paquetes y archivos clave tocados.
+- **Verificación:** cómo se comprobó (checks, tests, smoke, CI).
+- **Estado para retomar:** qué queda, qué sigue, cuidados.
+- **Relacionado:** ADR-00X, otras entradas, issues.
+```
+
+`tipo` ∈ `feat` · `fix` · `chore` · `docs` · `ci` · `refactor` · `decisión`.
+
+---
+
+## Estado actual (para retomar rápido)
+
+- **Proyecto:** 3B, marketplace comunitario (Sellers/Makers/Movers), monorepo
+  pnpm + Turborepo. Ver `CLAUDE.md` (stack, reglas, comandos) y
+  `docs/architecture/data-model.md` (modelo de datos **aprobado**, ADR-002).
+- **Hitos cerrados:** base del monorepo, **Hito A** (Postgres/PostGIS + migraciones
+  + seed), **Hito B** (Better Auth + RBAC con alcance + RLS + auditoría + tests de
+  aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización).
+- **En curso:** **M2 · Tienda + Catálogo + núcleo de media**, por rebanadas
+  verticales siguiendo `data-model.md §7`. Primera rebanada: **`store`** (alta de
+  tienda, equipo/roles, verificación).
+- **Entorno:** DB en Docker, puerto **5433** (el 5432 es un Postgres nativo).
+  `pnpm check` debe quedar verde; `pnpm test:integration` corre RLS/RBAC contra
+  DB real. CI en GitHub Actions valida ambos en cada push/PR a `main`.
+- **Git:** commits **directos a `main`** (dev extra: Raphaelofwar). Un commit por
+  unidad lógica; cada uno con su entrada en este DDR.
+
+---
+
+## 2026-10-31 · _(este commit)_ · docs — Se crea el DDR (historial de decisiones)
+
+- **Qué:** se crea `docs/DDR.md` (este archivo) con el estado actual + backfill de
+  todas las decisiones/commits hasta hoy; se documenta la convención en
+  `CLAUDE.md` ("Documentación viva (DDR)").
+- **Por qué:** el usuario pidió un historial de decisiones de diseño/producto por
+  cada commit y feature, con contexto suficiente para que **cualquier IA retome**
+  el trabajo. Los ADR solos no alcanzan (son solo arquitectura).
+- **Impacto / archivos:** `docs/DDR.md`, `CLAUDE.md`.
+- **Estado para retomar:** de aquí en más, **toda** unidad de trabajo que termina
+  en commit agrega su entrada arriba. Siguiente trabajo real: M2 rebanada `store`.
+
+## 2026-10-31 · `5715a4c` · feat — Helpers de autorización reutilizables (cierra M1)
+
+- **Qué:** primitivas de gating compartidas en `@3b/core/http`: guards de
+  capacidad (`requireSession`, `requirePlatformAdmin`, `requireRealPlatformAdmin`)
+  + accesores de contexto (`sessionCtx`, `realCtx`) + predicados por alcance/
+  propiedad (`isPlatformAdmin`, `isStoreMember`, `canManageStore`,
+  `isCommunityAdmin`, `isCommunityMember`, `isMoverApproved`).
+- **Por qué:** evitar reinventar la autorización en cada ruta y dejar el patrón
+  listo para M2. Viven en `@3b/core` (no en `apps/api`) para que los routers de
+  los módulos las usen sin romper los límites de dependencias.
+- **Impacto / archivos:** `packages/core/src/http/` (pasa de archivo único a
+  carpeta: `types.ts` + `guards.ts` + `authz.ts` + `index.ts`); refactor de
+  `modules/admin/http/routes.ts` y `modules/identity/http/routes.ts` para usar los
+  guards; `packages/core/test/integration/authz.test.ts`.
+- **Decisión de diseño:** los predicados derivan de las **mismas funciones
+  `authz.*` (SECURITY DEFINER)** que usa la RLS → gate de ruta y RLS comparten una
+  única fuente de verdad; el usuario evaluado es siempre el **efectivo** del
+  contexto (`app.user_id`), nunca el cliente. Detalle de implementación: `sql`
+  expande un array JS como lista `($1,$2)` (estilo IN), así que para `text[]` se
+  pasa un literal `{...}` de un solo parámetro con cast.
+- **Verificación:** `pnpm check` verde; 9/9 tests de integración de core; smoke
+  HTTP (no-admin → 403, sin sesión → 401, impersonación intacta); CI verde.
+- **Estado para retomar:** M1 cerrado. Siguiente: **M2 rebanada `store`**.
+- **Relacionado:** ADR-001 (seguridad en capas), [data-model](architecture/data-model.md).
+
+## 2026-10-31 · `9ced48d` · ci — GitHub Actions (check + integración)
+
+- **Qué:** workflow `.github/workflows/ci.yml` con dos jobs: `check`
+  (`pnpm check`, sin DB) e `integration` (Postgres 17 + PostGIS de servicio,
+  bootstrap del rol `app` + extensiones vía `infra/db/init`, reset + migraciones
+  + seed, tests RLS/RBAC). Corre en push y PR a `main`.
+- **Por qué:** proteger `main` con 2+ devs trabajando directo sobre la rama:
+  feedback inmediato (X roja en el commit) si algo rompe lint/tipos/tests/RLS.
+- **Impacto / archivos:** `.github/workflows/ci.yml`.
+- **Verificación:** run verde (ambos jobs `success`), incluida la integración
+  contra DB real en el runner.
+- **Estado para retomar:** para **bloquear** merges (no solo avisar) habría que
+  activar *required status checks* en GitHub si se pasa a flujo con PRs. Aviso no
+  bloqueante: `actions/*@v4` usan Node 20 (deprecándose); bump a `@v5` lo silencia.
+- **Relacionado:** entrada `5715a4c`.
+
+## 2026-10-30 · `b40d0a2` · feat — "Ver como" (impersonación de superadmin)
+
+- **Qué:** el admin de plataforma recorre la app como cualquier usuario sin
+  abandonar su sesión, con banner persistente y auditoría. Backend: middleware de
+  `/v1` resuelve usuario **real** vs **efectivo** (cookie `3b_impersonate` →
+  conmuta contexto RLS si el real es admin); rutas admin (lista de usuarios + iniciar/
+  terminar impersonación); `/v1/me` expone `impersonating`. Web: control en navbar
+  + banner `bg-brand`.
+- **Por qué:** soporte/QA del superadmin sin credenciales de terceros; cierra M1.
+- **Impacto / archivos:** `packages/contracts/src/identity.ts` (`Impersonation`),
+  `packages/core/src/http.ts` (contexto real/efectivo), `modules/admin/*`,
+  `modules/identity/http/routes.ts`, `apps/api/src/index.ts` (middleware),
+  `apps/web/app/_components/{ver-como,impersonation-banner}.tsx`, navbar, layout.
+- **Decisión de diseño:** nunca se confía en el cliente; el gate del **inicio/fin**
+  usa el admin **real** (sigue disponible aun impersonando, para poder volver), y
+  la lista de usuarios usa el admin **efectivo**. Acciones en `platform.audit_log`.
+- **Verificación:** flujo end-to-end contra DB real + auditoría registrada.
+- **Relacionado:** ADR-001.
+
+## 2026-10-30 · `87ff532` · chore — Excluir `*.md` de Biome
+
+- **Qué:** se agrega `!**/*.md` al alcance de Biome.
+- **Por qué:** el formateador de Markdown de Biome 2.6 reflowea tablas anchas de
+  forma no determinista (difiere entre modo global y archivo único) → `--write` no
+  converge y rompe `pnpm check`. Los docs de arquitectura tienen tablas anchas y
+  Mermaid que no queremos que toque. Mismo criterio que CSS/YAML.
+- **Impacto / archivos:** `biome.json`.
+
+## 2026-10-30 · `5e1027a` / `051dafc` · docs — Modelo de datos del MVP (ADR-001/002)
+
+- **Qué:** `docs/architecture/data-model.md` (modelo conceptual/lógico/físico:
+  diccionario, ER por dominio en Mermaid, autz/aislamiento, invariantes, máquinas
+  de estado, migraciones incrementales por hito, 12 decisiones D-01..D-12) +
+  **ADR-001** (arquitectura fundacional) y **ADR-002** (modelo de datos, Aceptada).
+  Ajustes al roadmap. `051dafc` lo entrega para revisión; `5e1027a` lo marca
+  **aprobado** y desbloquea M2.
+- **Por qué:** cerrar la arquitectura de datos/objetos antes de implementar M2.
+- **Impacto / archivos:** `docs/architecture/**`, `docs/ROADMAP.md`.
+- **Estado para retomar:** D-07 (uuidv7 en tablas de alto volumen), D-01
+  (`mover_profiles` → `shipping` en M6) y D-10 (moneda por pedido) confirmadas.
+- **Relacionado:** ADR-002.
+
+## 2026-10-30 · `98e5325` · docs — Roadmap hacia el MVP
+
+- **Qué:** `docs/ROADMAP.md` con hitos M1–M9 (patrón vertical por módulo, PWA/
+  rendimiento/a11y transversales, condiciones obligatorias para trabajo paralelo).
+- **Por qué:** hoja de ruta compartida para repartir trabajo entre devs/agentes.
+
+## 2026-10-30 · `030c3de` · feat — Shell (slice 1) + seed de credenciales
+
+- **Qué:** cableado web↔API vía **BFF** (rewrites de Next proxyan `/api/auth` y
+  `/v1`), login con Better Auth, navbar glass con **4 espacios gateados por
+  capacidad** (Comprar/Mi Tienda/Mover/Admin), `/v1/me`. Seed de credenciales
+  (`@3b/auth`, `Password123!`) integrado en `db:reset`.
+- **Por qué:** primera rebanada vertical visible, probando toda la pila.
+- **Impacto / archivos:** `apps/web/*` (shell, lib/me, auth-client, next.config),
+  `packages/auth/src/seed-credentials.ts`.
+
+## 2026-10-30 · `7927e19` · feat — Hito B (Better Auth + RBAC + RLS)
+
+- **Qué:** módulos `system`/`identity`/`admin` en `@3b/core`; Better Auth sobre
+  `identity.users`; **RLS de mínimo privilegio** (rol `app` sin BYPASSRLS, contexto
+  por transacción con `withAppContext`, funciones `authz.*` SECURITY DEFINER);
+  auditoría en `platform.audit_log`; tests de aislamiento RLS + capacidades RBAC.
+- **Por qué:** backbone de seguridad en capas (RBAC con alcance + propiedad + RLS).
+- **Impacto / archivos:** `packages/core/**`, `packages/auth/**`,
+  `packages/db/migrations/0001_rls_security.sql` y siguientes.
+- **Decisión de diseño:** identidad = **capacidades con alcance**, no roles
+  globales (todo usuario es Maker; Seller/Mover/admin de comunidad son alcances).
+- **Relacionado:** ADR-001.
+
+## 2026-10-30 · `fcba6de` · feat — Hito A (Postgres/PostGIS + migraciones + seed)
+
+- **Qué:** esquema Drizzle (un esquema por módulo), migraciones, seed determinista,
+  `docker-compose.yml` (Postgres 17 + PostGIS) e `infra/db/init` (extensiones + rol
+  `app`). DB publicada en **5433**.
+- **Por qué:** persistencia real desde el inicio (sin fakes), base para Hito B.
+- **Impacto / archivos:** `packages/db/**`, `docker-compose.yml`, `infra/db/init`.
+
+## 2026-10-30 · `05fc5ba` / `80f938b` / `3ae4dea` / `56b145a` · chore/refactor — Monorepo
+
+- **Qué:** conversión del repo (antes solo Design System) a **monorepo** pnpm +
+  Turborepo; el DS se mueve a `packages/ui` (`@3b/ui`, consumido desde la fuente);
+  apps `web`/`api`/`worker`; tooling (Biome, Vitest, dependency-cruiser) con
+  `pnpm check`; normalización de EOL (`.gitattributes`).
+- **Por qué:** estructura modular estricta para escalar sin reescrituras.
+- **Impacto / archivos:** raíz del workspace, `packages/*`, `apps/*`.
+- **Relacionado:** ADR-001.
+
+## 2026-10-29 · `45c646a` · chore — Scaffold inicial del Design System
+
+- **Qué:** punto de partida: Design System de 3B (Vite lib + Storybook, tokens,
+  glassmorfismo, shadcn/ui new-york).
+- **Por qué:** base visual del producto; luego absorbida como `@3b/ui`.
