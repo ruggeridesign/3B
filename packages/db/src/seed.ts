@@ -182,15 +182,65 @@ async function main() {
     .values([{ userId: U_PEDRO, status: 'approved' }])
     .onConflictDoNothing();
 
+  // Catálogo de ejemplo. `community_id` lo fija igual el trigger desde la tienda;
+  // lo pasamos explícito porque la columna es NOT NULL en el insert de Drizzle.
+  const publishedAt = new Date('2026-10-31T00:00:00Z');
+  await db
+    .insert(schema.items)
+    .values([
+      {
+        id: '44444444-4444-4444-4444-444444444401',
+        storeId: S_FERRETERIA,
+        communityId: CORO,
+        kind: 'product',
+        slug: 'taladro-percutor-650w',
+        title: 'Taladro percutor 650W',
+        description: 'Ideal para concreto y madera. Incluye maletín.',
+        priceAmount: '49.90',
+        currency: 'USD',
+        priceMode: 'fixed',
+        status: 'published',
+        publishedAt,
+      },
+      {
+        id: '44444444-4444-4444-4444-444444444402',
+        storeId: S_FERRETERIA,
+        communityId: CORO,
+        kind: 'product',
+        slug: 'juego-destornilladores-6',
+        title: 'Juego de destornilladores (6 piezas)',
+        priceAmount: '12.00',
+        currency: 'USD',
+        priceMode: 'fixed',
+        status: 'draft',
+      },
+      {
+        id: '44444444-4444-4444-4444-444444444403',
+        storeId: S_PELUQUERIA,
+        communityId: PUNTO_FIJO,
+        kind: 'service',
+        slug: 'corte-y-peinado',
+        title: 'Corte y peinado',
+        description: 'Lavado, corte y peinado. Turno de 45 min.',
+        priceAmount: '8.00',
+        currency: 'USD',
+        priceMode: 'from',
+        status: 'published',
+        publishedAt,
+      },
+    ])
+    .onConflictDoNothing();
+
   // Resumen
-  const [[c], [u], [s], [m]] = await Promise.all([
+  const [[c], [u], [s], [m], [i]] = await Promise.all([
     sql`select count(*)::int as n from community.communities`,
     sql`select count(*)::int as n from identity.users`,
     sql`select count(*)::int as n from store.stores`,
     sql`select count(*)::int as n from community.memberships`,
+    sql`select count(*)::int as n from catalog.items`,
   ]);
   console.log(
-    `[seed] comunidades=${c.n} usuarios=${u.n} tiendas=${s.n} membresías=${m.n}`,
+    `[seed] comunidades=${c.n} usuarios=${u.n} tiendas=${s.n} membresías=${m.n} ítems=${i.n}`,
   );
 
   await sql.end();

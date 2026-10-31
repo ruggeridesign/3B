@@ -6,17 +6,22 @@ import postgres from 'postgres';
 async function main() {
   const env = loadEnv();
   const sql = postgres(env.DATABASE_URL, { max: 1 });
+  // Nota: al agregar un esquema nuevo (pgSchema) hay que sumarlo acá, o el
+  // `CREATE SCHEMA` de su migración choca en el siguiente reset.
+  const schemas = [
+    'catalog',
+    'store',
+    'community',
+    'identity',
+    'media',
+    'platform',
+    'authz',
+    'drizzle',
+  ];
   await sql.unsafe(
-    'DROP SCHEMA IF EXISTS store CASCADE;' +
-      'DROP SCHEMA IF EXISTS community CASCADE;' +
-      'DROP SCHEMA IF EXISTS identity CASCADE;' +
-      'DROP SCHEMA IF EXISTS platform CASCADE;' +
-      'DROP SCHEMA IF EXISTS authz CASCADE;' +
-      'DROP SCHEMA IF EXISTS drizzle CASCADE;',
+    schemas.map((s) => `DROP SCHEMA IF EXISTS ${s} CASCADE;`).join(''),
   );
-  console.log(
-    '[reset] esquemas eliminados (store, community, identity, platform, authz, drizzle)',
-  );
+  console.log(`[reset] esquemas eliminados (${schemas.join(', ')})`);
   await sql.end();
 }
 

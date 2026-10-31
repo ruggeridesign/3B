@@ -55,6 +55,14 @@ export function canManageStore(
   return isStoreMember(db, storeId, ['owner', 'admin']);
 }
 
+/** ¿Puede gestionar el catálogo de la tienda? (owner, admin o catalog). */
+export function canManageCatalog(
+  db: AppTransaction,
+  storeId: string,
+): Promise<boolean> {
+  return isStoreMember(db, storeId, ['owner', 'admin', 'catalog']);
+}
+
 /** ¿Es admin de ESA comunidad? (alcance acotado a la comunidad). */
 export function isCommunityAdmin(
   db: AppTransaction,

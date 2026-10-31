@@ -40,11 +40,15 @@
   + seed), **Hito B** (Better Auth + RBAC con alcance + RLS + auditoría + tests de
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización).
 - **En curso:** **M2 · Tienda + Catálogo + núcleo de media**, por rebanadas
-  verticales siguiendo `data-model.md §7`. **Store rebanadas 1 (alta + "mis
-  tiendas")**, **2 (equipo/roles)**, **3 (métodos de pago)** y **núcleo de
-  `media` (backend) HECHAS**; siguiente: wirear un consumidor de media (logo de
-  tienda, con columna en `stores`), o `catalog`, o KYC (ya desbloqueado por media,
-  falta el flujo de revisión).
+  verticales siguiendo `data-model.md §7`. HECHAS: **store 1 (alta)**, **2
+  (equipo/roles)**, **3 (métodos de pago)**, **núcleo de `media` (backend)** y
+  **catalog rebanada 1 (ítems)**. Siguiente en catalog: categorías/atributos,
+  variantes; o wirear imágenes (media) a ítems/tiendas; o KYC.
+- **Localhost demo:** `pnpm db:up` + `pnpm --filter @3b/api dev` (8787) +
+  `pnpm --filter @3b/web dev` (3000). Usuarios seed, password `Password123!`
+  (carlos@3b.test = Seller con 2 tiendas e ítems; admin@3b.test = superadmin +
+  "Ver como"). **Ojo:** `pnpm test:integration` resetea la DB (desloguea); re-seed
+  con `pnpm db:reset` para el demo.
 - **Entorno:** DB en Docker, puerto **5433** (el 5432 es un Postgres nativo).
   `pnpm check` debe quedar verde; `pnpm test:integration` corre RLS/RBAC contra
   DB real. CI en GitHub Actions valida ambos en cada push/PR a `main`.
@@ -53,7 +57,58 @@
 
 ---
 
-## 2026-10-31 · _(este commit)_ · feat — M2 media (núcleo): subida con URL firmada + storage local
+## 2026-10-31 · _(este commit)_ · feat — M2 catalog rebanada 1: ítems de tienda
+
+- **Qué:** módulo `catalog` con su primera rebanada: **ítems** (producto o
+  servicio) de una tienda. Tabla `catalog.items` + CRUD anidado
+  `GET/POST /v1/stores/{id}/items` y `PATCH/DELETE .../items/{itemId}`. Cara web:
+  sección **Catálogo** en `/mi-tienda/[id]` (listado + alta por tipo/precio +
+  publicar/despublicar + borrar). Seed con 3 ítems de ejemplo. Categorías,
+  atributos, variantes, colecciones y búsqueda llegan en rebanadas siguientes.
+- **Por qué:** es el corazón de M2 — convierte una tienda vacía en una con
+  productos; además estrena el rol de tienda **`catalog`** y el patrón de
+  denormalización de `community_id` (D-05).
+- **Impacto / archivos:** `packages/contracts/src/catalog.ts`
+  (`ItemKind`/`ItemStatus`/`PriceMode`/`Item(+List)`/`CreateItemInput`/
+  `UpdateItemInput`/`MoneyAmount`/`Currency`); `packages/db/src/schema/catalog.ts`
+  (`items`) + migración `0008_futuristic_amphibian.sql` (schema `catalog` + tabla
+  **+ trigger de community_id + RLS + grants**); `packages/db/src/seed.ts` (3
+  ítems) y `packages/db/src/reset.ts` (dropea también `catalog` y `media`);
+  `packages/core/src/modules/catalog/**` (item-repo + router) + `exports`;
+  `packages/core/src/http/authz.ts` (`canManageCatalog`); `apps/api` (monta
+  `catalogRouter`); `apps/web` (`getStoreItems`, `store-catalog.tsx`, página de
+  detalle); `packages/core/test/integration/catalog.test.ts`.
+- **Decisiones de diseño:**
+  - **`community_id` denormalizado por trigger BEFORE INSERT** (D-05,
+    `SECURITY DEFINER`): se fija desde la tienda, el cliente no lo envía ni puede
+    falsearlo. BEFORE para que exista antes del NOT NULL / WITH CHECK.
+  - **RLS de dos niveles:** los miembros de la tienda ven todo (incluye
+    borradores); afuera, solo ítems **publicados** en comunidad visible
+    (`can_see_community`). Gestionar (insert/update/delete) = owner/admin/**catalog**
+    (estrena el rol). La visibilidad de compradores se apoya en esta misma política.
+  - **Rutas anidadas bajo `/stores/{id}/items` pero en el módulo `catalog`**
+    (dueño de la tabla): la URL refleja la pertenencia sin romper los límites de
+    módulos (el router de catalog se monta en `/v1`).
+  - **Dinero**: `numeric(12,2)` + moneda explícita; en el DTO viaja como string.
+    `published_at` se congela al publicar por primera vez.
+  - **Insert vía SQL crudo** (omite `community_id`, lo pone el trigger); update
+    con el builder usando `Date` de JS (sin SQL en el `set`, para no pelear con los
+    tipos de Drizzle).
+  - **Fix `reset.ts`:** no dropeaba los esquemas nuevos `media`/`catalog`, así que
+    el 2º `db:reset` chocaba con `CREATE SCHEMA ... already exists`. Ahora dropea
+    la lista completa (al agregar un `pgSchema` hay que sumarlo acá).
+- **Verificación:** `pnpm check` verde (boundaries 218 módulos); integración db
+  6/6 + **core 29/29** (+5 catalog: trigger de community, publicar fija
+  published_at, RLS que bloquea a `sales`, no-miembro ve solo publicados, borrar);
+  smoke HTTP 12/12 (owner ve 2 / no-miembro 1, gating 403, slug repetido 409).
+- **Estado para retomar:** siguientes rebanadas de catalog: **categorías**
+  (ltree) y **atributos** (con herencia global→categoría→tienda), **variantes**,
+  y la **búsqueda** (M4). Luego wirear **imágenes** (media) a ítems. Pendiente:
+  validación de `attributes` jsonb y `search_tsv`.
+- **Relacionado:** [data-model §catalog y §7](architecture/data-model.md),
+  ADR-002 (D-02, D-05), ADR-001, entradas de store 1–3 y media.
+
+## 2026-10-31 · `d2e9249` · feat — M2 media (núcleo): subida con URL firmada + storage local
 
 - **Qué:** módulo transversal `media`. Tabla `media.media` (polimórfica por
   `owner_type`/`owner_id`) + subida en **dos fases**: `POST /v1/media` crea la fila

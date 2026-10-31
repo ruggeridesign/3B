@@ -2,6 +2,7 @@ import { auth } from '@3b/auth';
 import { loadEnv } from '@3b/config';
 import { type ApiVariables, dbErrorResponse } from '@3b/core/http';
 import { adminRouter, IMPERSONATE_COOKIE } from '@3b/core/modules/admin';
+import { catalogRouter } from '@3b/core/modules/catalog';
 import { meRouter, readIsPlatformAdmin } from '@3b/core/modules/identity';
 import { mediaRouter } from '@3b/core/modules/media';
 import { storeRouter } from '@3b/core/modules/store';
@@ -89,6 +90,7 @@ app.route('/v1', meRouter());
 app.route('/v1', adminRouter());
 app.route('/v1', storeRouter({ paymentsEncKey: env.PAYMENTS_ENC_KEY }));
 app.route('/v1', mediaRouter({ storage: mediaStorage }));
+app.route('/v1', catalogRouter());
 
 // Documento OpenAPI (contrato de la API).
 app.doc('/openapi.json', {

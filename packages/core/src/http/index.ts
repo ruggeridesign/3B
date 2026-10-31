@@ -4,6 +4,7 @@
 // `ApiVariables` vía `@3b/core/http`.
 
 export {
+  canManageCatalog,
   canManageStore,
   isCommunityAdmin,
   isCommunityMember,

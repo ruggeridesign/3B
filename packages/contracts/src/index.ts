@@ -1,4 +1,16 @@
 export {
+  CreateItemInput,
+  Currency,
+  Item,
+  ItemKind,
+  ItemList,
+  ItemSlug,
+  ItemStatus,
+  MoneyAmount,
+  PriceMode,
+  UpdateItemInput,
+} from './catalog';
+export {
   Capabilities,
   CommunityRole,
   Impersonation,

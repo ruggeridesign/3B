@@ -1,4 +1,4 @@
-import type { PaymentMethod, Store, StoreMember } from '@3b/contracts';
+import type { Item, PaymentMethod, Store, StoreMember } from '@3b/contracts';
 import { cookies } from 'next/headers';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787';
@@ -73,6 +73,23 @@ export async function getPaymentMethods(id: string): Promise<PaymentMethod[]> {
     if (!res.ok) return [];
     const data = (await res.json()) as { paymentMethods: PaymentMethod[] };
     return data.paymentMethods;
+  } catch {
+    return [];
+  }
+}
+
+/** Ítems (catálogo) de una tienda. [] si no hay acceso o falla. */
+export async function getStoreItems(id: string): Promise<Item[]> {
+  const cookie = await cookieHeader();
+  if (!cookie) return [];
+  try {
+    const res = await fetch(`${API}/v1/stores/${id}/items`, {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { items: Item[] };
+    return data.items;
   } catch {
     return [];
   }

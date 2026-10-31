@@ -11,7 +11,8 @@
     "./modules/identity": "./src/modules/identity/index.ts",
     "./modules/admin": "./src/modules/admin/index.ts",
     "./modules/store": "./src/modules/store/index.ts",
-    "./modules/media": "./src/modules/media/index.ts"
+    "./modules/media": "./src/modules/media/index.ts",
+    "./modules/catalog": "./src/modules/catalog/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
