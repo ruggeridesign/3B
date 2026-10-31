@@ -9,6 +9,7 @@ function toItem(row: ItemRow): Item {
     id: row.id,
     storeId: row.storeId,
     communityId: row.communityId,
+    categoryId: row.categoryId,
     kind: row.kind as Item['kind'],
     slug: row.slug,
     title: row.title,
@@ -63,10 +64,10 @@ export async function createItem(
 ): Promise<Item> {
   const rows = (await db.execute(sql`
     INSERT INTO catalog.items
-      (store_id, kind, slug, title, description, price_amount, currency, price_mode, status, published_at)
+      (store_id, category_id, kind, slug, title, description, price_amount, currency, price_mode, status, published_at)
     VALUES (
-      ${input.storeId}, ${input.kind}, ${input.slug}, ${input.title},
-      ${input.description ?? null}, ${input.priceAmount ?? null},
+      ${input.storeId}, ${input.categoryId ?? null}, ${input.kind}, ${input.slug},
+      ${input.title}, ${input.description ?? null}, ${input.priceAmount ?? null},
       ${input.currency}, ${input.priceMode}, ${input.status},
       CASE WHEN ${input.status}::text = 'published' THEN now() ELSE NULL END
     )
@@ -88,6 +89,7 @@ export async function updateItem(
   };
   if (input.title !== undefined) set.title = input.title;
   if (input.description !== undefined) set.description = input.description;
+  if (input.categoryId !== undefined) set.categoryId = input.categoryId;
   if (input.priceAmount !== undefined) set.priceAmount = input.priceAmount;
   if (input.currency !== undefined) set.currency = input.currency;
   if (input.priceMode !== undefined) set.priceMode = input.priceMode;

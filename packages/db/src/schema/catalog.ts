@@ -11,8 +11,30 @@ import { timestamps } from './_shared';
 import { communities } from './community';
 import { stores } from './store';
 
-// Esquema `catalog`: productos/servicios de las tiendas. Primera rebanada: items.
+// Esquema `catalog`: productos/servicios de las tiendas (items) + taxonomía.
 export const catalog = pgSchema('catalog');
+
+/**
+ * Taxonomía **global** de categorías (jerárquica vía `parent_id`). Reservada al
+ * admin de plataforma; los ítems se asignan a una. `kind` acota si aplica a
+ * productos, servicios o ambos. (`path` ltree se difirió: los ancestros se
+ * resuelven con CTE recursiva sobre `parent_id`.)
+ */
+export const categories = catalog.table(
+  'categories',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    parentId: uuid('parent_id'),
+    name: text('name').notNull(),
+    slug: text('slug').notNull(),
+    kind: text('kind').notNull().default('both'), // product | service | both
+    ...timestamps,
+  },
+  (t) => [
+    unique('categories_slug_unique').on(t.slug),
+    index('categories_parent_idx').on(t.parentId),
+  ],
+);
 
 /**
  * Un ítem (producto o servicio) de una tienda. `community_id` se **denormaliza**
@@ -31,6 +53,10 @@ export const items = catalog.table(
     communityId: uuid('community_id')
       .notNull()
       .references(() => communities.id, { onDelete: 'restrict' }),
+    // Categoría de la taxonomía global (opcional).
+    categoryId: uuid('category_id').references(() => categories.id, {
+      onDelete: 'set null',
+    }),
     kind: text('kind').notNull(), // product | service
     slug: text('slug').notNull(),
     title: text('title').notNull(),

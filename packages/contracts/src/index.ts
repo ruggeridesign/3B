@@ -1,4 +1,9 @@
 export {
+  Category,
+  CategoryKind,
+  CategoryList,
+  CategorySlug,
+  CreateCategoryInput,
   CreateItemInput,
   Currency,
   Item,

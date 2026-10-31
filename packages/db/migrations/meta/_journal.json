@@ -64,6 +64,13 @@
       "when": 1793488684583,
       "tag": "0008_futuristic_amphibian",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793489894506,
+      "tag": "0009_charming_captain_cross",
+      "breakpoints": true
     }
   ]
 }

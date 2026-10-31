@@ -1,10 +1,51 @@
 import { z } from 'zod';
+import { Uuid } from './store';
 
 /**
- * Contratos del módulo `catalog`. Primera rebanada: **ítems** (producto o
- * servicio) de una tienda. Categorías, atributos, variantes y búsqueda llegan en
- * rebanadas siguientes. Dinero: `numeric` como string + moneda explícita.
+ * Contratos del módulo `catalog`. Rebanada 1: **ítems**. Rebanada 2:
+ * **categorías** (taxonomía global) + asignación a ítems. Atributos, variantes y
+ * búsqueda llegan después. Dinero: `numeric` como string + moneda explícita.
  */
+
+// ===== Categorías (taxonomía global) =====
+
+/** Para qué sirve la categoría. */
+export const CategoryKind = z.enum(['product', 'service', 'both']);
+export type CategoryKind = z.infer<typeof CategoryKind>;
+
+/** Slug de categoría: minúsculas, alfanumérico con guiones; único global. */
+export const CategorySlug = z
+  .string()
+  .min(2)
+  .max(60)
+  .regex(
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+    'Usá minúsculas, números y guiones (sin espacios).',
+  );
+
+/** Una categoría del árbol (taxonomía de plataforma). */
+export const Category = z.object({
+  id: z.string(),
+  parentId: z.string().nullable(),
+  name: z.string(),
+  slug: z.string(),
+  kind: CategoryKind,
+  createdAt: z.string(),
+});
+export type Category = z.infer<typeof Category>;
+
+/** Lista de categorías (el árbol se arma en el cliente con `parentId`). */
+export const CategoryList = z.object({ categories: z.array(Category) });
+export type CategoryList = z.infer<typeof CategoryList>;
+
+/** Alta de una categoría (solo admin de plataforma). */
+export const CreateCategoryInput = z.object({
+  name: z.string().min(2).max(80),
+  slug: CategorySlug,
+  kind: CategoryKind,
+  parentId: Uuid.nullable().optional(),
+});
+export type CreateCategoryInput = z.infer<typeof CreateCategoryInput>;
 
 /** Un ítem es un producto o un servicio. */
 export const ItemKind = z.enum(['product', 'service']);
@@ -43,6 +84,7 @@ export const Item = z.object({
   id: z.string(),
   storeId: z.string(),
   communityId: z.string(),
+  categoryId: z.string().nullable(),
   kind: ItemKind,
   slug: z.string(),
   title: z.string(),
@@ -66,6 +108,7 @@ export const CreateItemInput = z.object({
   slug: ItemSlug,
   title: z.string().min(2).max(120),
   description: z.string().max(4000).optional(),
+  categoryId: Uuid.nullable().optional(),
   priceAmount: MoneyAmount.optional(),
   currency: Currency.default('USD'),
   priceMode: PriceMode.default('fixed'),
@@ -77,6 +120,7 @@ export type CreateItemInput = z.infer<typeof CreateItemInput>;
 export const UpdateItemInput = z.object({
   title: z.string().min(2).max(120).optional(),
   description: z.string().max(4000).nullable().optional(),
+  categoryId: Uuid.nullable().optional(),
   priceAmount: MoneyAmount.nullable().optional(),
   currency: Currency.optional(),
   priceMode: PriceMode.optional(),

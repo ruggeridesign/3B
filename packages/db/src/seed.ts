@@ -182,6 +182,43 @@ async function main() {
     .values([{ userId: U_PEDRO, status: 'approved' }])
     .onConflictDoNothing();
 
+  // Taxonomía de ejemplo (categorías raíz y luego hijas, por el FK de jerarquía).
+  const CAT_HERRAMIENTAS = '55555555-5555-5555-5555-555555555501';
+  const CAT_TALADROS = '55555555-5555-5555-5555-555555555502';
+  const CAT_BELLEZA = '55555555-5555-5555-5555-555555555503';
+  const CAT_PELUQUERIA = '55555555-5555-5555-5555-555555555504';
+  await db
+    .insert(schema.categories)
+    .values([
+      {
+        id: CAT_HERRAMIENTAS,
+        name: 'Herramientas',
+        slug: 'herramientas',
+        kind: 'product',
+      },
+      { id: CAT_BELLEZA, name: 'Belleza', slug: 'belleza', kind: 'service' },
+    ])
+    .onConflictDoNothing();
+  await db
+    .insert(schema.categories)
+    .values([
+      {
+        id: CAT_TALADROS,
+        parentId: CAT_HERRAMIENTAS,
+        name: 'Taladros',
+        slug: 'taladros',
+        kind: 'product',
+      },
+      {
+        id: CAT_PELUQUERIA,
+        parentId: CAT_BELLEZA,
+        name: 'Peluquería',
+        slug: 'peluqueria',
+        kind: 'service',
+      },
+    ])
+    .onConflictDoNothing();
+
   // Catálogo de ejemplo. `community_id` lo fija igual el trigger desde la tienda;
   // lo pasamos explícito porque la columna es NOT NULL en el insert de Drizzle.
   const publishedAt = new Date('2026-10-31T00:00:00Z');
@@ -192,6 +229,7 @@ async function main() {
         id: '44444444-4444-4444-4444-444444444401',
         storeId: S_FERRETERIA,
         communityId: CORO,
+        categoryId: CAT_TALADROS,
         kind: 'product',
         slug: 'taladro-percutor-650w',
         title: 'Taladro percutor 650W',
@@ -206,6 +244,7 @@ async function main() {
         id: '44444444-4444-4444-4444-444444444402',
         storeId: S_FERRETERIA,
         communityId: CORO,
+        categoryId: CAT_HERRAMIENTAS,
         kind: 'product',
         slug: 'juego-destornilladores-6',
         title: 'Juego de destornilladores (6 piezas)',
@@ -218,6 +257,7 @@ async function main() {
         id: '44444444-4444-4444-4444-444444444403',
         storeId: S_PELUQUERIA,
         communityId: PUNTO_FIJO,
+        categoryId: CAT_PELUQUERIA,
         kind: 'service',
         slug: 'corte-y-peinado',
         title: 'Corte y peinado',

@@ -1,6 +1,12 @@
 'use client';
 
-import type { Item, ItemKind, ItemStatus, PriceMode } from '@3b/contracts';
+import type {
+  Category,
+  Item,
+  ItemKind,
+  ItemStatus,
+  PriceMode,
+} from '@3b/contracts';
 import { Button, cn, Input, Label } from '@3b/ui';
 import { useRouter } from 'next/navigation';
 import { useId, useState } from 'react';
@@ -34,15 +40,18 @@ function priceLabel(item: Item): string {
 export function StoreCatalog({
   storeId,
   items,
+  categories,
   canManage,
 }: {
   storeId: string;
   items: Item[];
+  categories: Category[];
   canManage: boolean;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const categoryName = new Map(categories.map((c) => [c.id, c.name]));
 
   async function mutate(path: string, init: RequestInit) {
     setError(null);
@@ -94,7 +103,11 @@ export function StoreCatalog({
                 </p>
                 <p className="text-muted-foreground text-sm">
                   {it.kind === 'product' ? 'Producto' : 'Servicio'} ·{' '}
-                  {priceLabel(it)} · /{it.slug}
+                  {priceLabel(it)}
+                  {it.categoryId && categoryName.has(it.categoryId)
+                    ? ` · ${categoryName.get(it.categoryId)}`
+                    : ''}{' '}
+                  · /{it.slug}
                 </p>
               </div>
 
@@ -131,7 +144,9 @@ export function StoreCatalog({
 
       {error && <p className="text-destructive text-sm">{error}</p>}
 
-      {canManage && <AddItem storeId={storeId} onError={setError} />}
+      {canManage && (
+        <AddItem storeId={storeId} categories={categories} onError={setError} />
+      )}
     </section>
   );
 }
@@ -139,9 +154,11 @@ export function StoreCatalog({
 /** Formulario de alta de un ítem. */
 function AddItem({
   storeId,
+  categories,
   onError,
 }: {
   storeId: string;
+  categories: Category[];
   onError: (msg: string | null) => void;
 }) {
   const router = useRouter();
@@ -151,6 +168,7 @@ function AddItem({
   const modeId = useId();
   const priceId = useId();
   const currencyId = useId();
+  const categoryId = useId();
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -159,6 +177,7 @@ function AddItem({
     setLoading(true);
     const form = new FormData(e.currentTarget);
     const price = String(form.get('priceAmount') ?? '').trim();
+    const category = String(form.get('categoryId') ?? '');
     const res = await fetch(`/v1/stores/${storeId}/items`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -169,6 +188,7 @@ function AddItem({
         priceMode: form.get('priceMode') as PriceMode,
         priceAmount: price || undefined,
         currency: (form.get('currency') as string) || 'USD',
+        categoryId: category || undefined,
         status: 'draft',
       }),
     });
@@ -264,6 +284,25 @@ function AddItem({
           />
         </div>
       </div>
+
+      {categories.length > 0 && (
+        <div className="space-y-1.5">
+          <Label htmlFor={categoryId}>Categoría</Label>
+          <select
+            id={categoryId}
+            name="categoryId"
+            className={fieldClass}
+            defaultValue=""
+          >
+            <option value="">Sin categoría</option>
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {cat.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <Button type="submit" disabled={loading}>
         {loading ? 'Creando…' : 'Agregar ítem'}

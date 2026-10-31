@@ -41,9 +41,10 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización).
 - **En curso:** **M2 · Tienda + Catálogo + núcleo de media**, por rebanadas
   verticales siguiendo `data-model.md §7`. HECHAS: **store 1 (alta)**, **2
-  (equipo/roles)**, **3 (métodos de pago)**, **núcleo de `media` (backend)** y
-  **catalog rebanada 1 (ítems)**. Siguiente en catalog: categorías/atributos,
-  variantes; o wirear imágenes (media) a ítems/tiendas; o KYC.
+  (equipo/roles)**, **3 (métodos de pago)**, **núcleo de `media` (backend)**,
+  **catalog 1 (ítems)** y **catalog 2a (categorías)**. Siguiente: **catalog 2b —
+  atributos** (definiciones con alcance global/categoría/tienda + herencia), luego
+  variantes; o wirear imágenes (media) a ítems; o KYC.
 - **Localhost demo:** `pnpm db:up` + `pnpm --filter @3b/api dev` (8787) +
   `pnpm --filter @3b/web dev` (3000). Usuarios seed, password `Password123!`
   (carlos@3b.test = Seller con 2 tiendas e ítems; admin@3b.test = superadmin +
@@ -57,7 +58,50 @@
 
 ---
 
-## 2026-10-31 · _(este commit)_ · feat — M2 catalog rebanada 1: ítems de tienda
+## 2026-10-31 · _(este commit)_ · feat — M2 catalog rebanada 2a: categorías (taxonomía)
+
+- **Qué:** taxonomía **global** de categorías (jerárquica) + asignación de
+  categoría a los ítems. Endpoints `GET /v1/categories` (pública) y
+  `POST /v1/categories` (solo admin de plataforma). Los ítems ganan `category_id`
+  (opcional): el alta/edición lo acepta y la web muestra un selector + la categoría
+  en cada ítem. Seed con una taxonomía (Herramientas→Taladros, Belleza→Peluquería)
+  y los ítems de ejemplo ya categorizados.
+- **Por qué:** da estructura al catálogo y es la base para la herencia de atributos
+  (2b) y para los filtros de descubrimiento (M4).
+- **Impacto / archivos:** `packages/contracts/src/catalog.ts`
+  (`CategoryKind`/`Category(+List)`/`CategorySlug`/`CreateCategoryInput`;
+  `Item.categoryId` + en los inputs); `packages/db/src/schema/catalog.ts`
+  (`categories` + `items.categoryId`) + migración `0009_charming_captain_cross.sql`
+  (tabla + FK de jerarquía + FK items.category_id + **RLS + grants**);
+  `packages/db/src/seed.ts` (taxonomía + ítems categorizados);
+  `packages/core/src/modules/catalog/infra/category-repo.ts` + router (2 rutas) +
+  `item-repo` (maneja `categoryId`); `apps/web` (`lib/catalog.ts`,
+  `store-catalog.tsx` con selector, página de detalle);
+  `packages/core/test/integration/category.test.ts`.
+- **Decisiones de diseño:**
+  - **Categorías = taxonomía de plataforma** (sin store/comunidad): RLS de lectura
+    **pública** (`USING (true)` para cualquier sesión) y escritura solo admin de
+    plataforma. Jerarquía por `parent_id` con FK self (RESTRICT).
+  - **`path` ltree diferido:** su único uso es resolver ancestros (para la herencia
+    de atributos de 2b); se hará con **CTE recursiva sobre `parent_id`**, más simple
+    y sin las restricciones de labels/mantenimiento de ltree. Es una optimización de
+    lectura que se puede agregar después si el volumen lo pide (desvía de D de
+    ADR-002 a nivel implementación, no de modelo lógico).
+  - **`items.category_id`** nullable con `ON DELETE SET NULL` (borrar una categoría
+    no bloquea; los ítems quedan sin categoría). Validar que el `kind` de la
+    categoría matchee el del ítem queda pendiente.
+- **Verificación:** `pnpm check` verde (boundaries 221 módulos); integración db 6/6
+  + **core 33/33** (+4 category: taxonomía visible a cualquiera, alta solo admin,
+  no-admin bloqueado por RLS, asignar categoría a un ítem); smoke HTTP 8/8
+  (jerarquía, gating admin 403, slug dup 409, ítem con categoría).
+- **Estado para retomar:** **2b — atributos**: `attribute_definitions`
+  (scope global/category/store, D-02) + resolución por herencia (global +
+  ancestros de la categoría + tienda) + validación de los valores en `items`. Luego
+  variantes e imágenes de ítems.
+- **Relacionado:** [data-model §catalog y §7](architecture/data-model.md), ADR-002
+  (D-05), entrada de catalog rebanada 1.
+
+## 2026-10-31 · `e97e577` · feat — M2 catalog rebanada 1: ítems de tienda
 
 - **Qué:** módulo `catalog` con su primera rebanada: **ítems** (producto o
   servicio) de una tienda. Tabla `catalog.items` + CRUD anidado

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { getCategories } from '../../../../lib/catalog';
 import { getMe } from '../../../../lib/me';
 import {
   getPaymentMethods,
@@ -36,10 +37,11 @@ export default async function StoreDetail({
     );
   }
 
-  const [members, paymentMethods, items] = await Promise.all([
+  const [members, paymentMethods, items, categories] = await Promise.all([
     getStoreMembers(id),
     getPaymentMethods(id),
     getStoreItems(id),
+    getCategories(),
   ]);
   // El rol del usuario en ESTA tienda define si ve los controles de gestión.
   // La API gatea igual; esto solo decide qué mostramos.
@@ -71,6 +73,7 @@ export default async function StoreDetail({
       <StoreCatalog
         storeId={store.id}
         items={items}
+        categories={categories}
         canManage={canManageCatalog}
       />
 

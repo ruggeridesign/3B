@@ -2,9 +2,11 @@ import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import {
   type ApiVariables,
   canManageCatalog,
+  isPlatformAdmin,
   requireSession,
   sessionCtx,
 } from '../../../http';
+import { createCategory, listCategories } from '../infra/category-repo';
 import {
   createItem,
   deleteItem,
@@ -17,17 +19,46 @@ const status = z.enum(['draft', 'published', 'archived']);
 const priceMode = z.enum(['fixed', 'from', 'quote']);
 const money = z.string().regex(/^\d{1,10}(\.\d{1,2})?$/);
 const currency = z.string().regex(/^[A-Z]{3}$/);
+const uuid = z
+  .string()
+  .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 const slug = z
   .string()
   .min(2)
   .max(60)
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+const categoryKind = z.enum(['product', 'service', 'both']);
+
+const categoryOut = z
+  .object({
+    id: z.string(),
+    parentId: z.string().nullable(),
+    name: z.string(),
+    slug: z.string(),
+    kind: categoryKind,
+    createdAt: z.string(),
+  })
+  .openapi('Category');
+
+const categoryListOut = z
+  .object({ categories: z.array(categoryOut) })
+  .openapi('CategoryList');
+
+const createCategoryBody = z
+  .object({
+    name: z.string().min(2).max(80),
+    slug,
+    kind: categoryKind,
+    parentId: uuid.nullable().optional(),
+  })
+  .openapi('CreateCategory');
 
 const itemOut = z
   .object({
     id: z.string(),
     storeId: z.string(),
     communityId: z.string(),
+    categoryId: z.string().nullable(),
     kind,
     slug: z.string(),
     title: z.string(),
@@ -49,6 +80,7 @@ const createBody = z
     slug,
     title: z.string().min(2).max(120),
     description: z.string().max(4000).optional(),
+    categoryId: uuid.nullable().optional(),
     priceAmount: money.optional(),
     currency: currency.default('USD'),
     priceMode: priceMode.default('fixed'),
@@ -60,6 +92,7 @@ const updateBody = z
   .object({
     title: z.string().min(2).max(120).optional(),
     description: z.string().max(4000).nullable().optional(),
+    categoryId: uuid.nullable().optional(),
     priceAmount: money.nullable().optional(),
     currency: currency.optional(),
     priceMode: priceMode.optional(),
@@ -85,6 +118,75 @@ const itemParam = z.object({
 export function catalogRouter() {
   const app = new OpenAPIHono<{ Variables: ApiVariables }>();
   app.use('*', requireSession);
+
+  // ===== Categorías (taxonomía global) =====
+
+  // Listar todas las categorías (taxonomía pública para cualquier sesión).
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/categories',
+      tags: ['catalog'],
+      summary: 'Taxonomía de categorías',
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: categoryListOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const categories = await listCategories(db);
+      return c.json({ categories }, 200);
+    },
+  );
+
+  // Crear una categoría. Solo admin de plataforma. parentId inexistente → 409.
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/categories',
+      tags: ['catalog'],
+      summary: 'Crear una categoría',
+      request: {
+        body: {
+          content: { 'application/json': { schema: createCategoryBody } },
+        },
+      },
+      responses: {
+        201: {
+          description: 'Creada',
+          content: { 'application/json': { schema: categoryOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'Solo el admin de plataforma',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        409: {
+          description: 'Slug en uso o parent inexistente',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const body = c.req.valid('json');
+      if (!(await isPlatformAdmin(db))) {
+        return c.json({ error: 'Solo el admin de plataforma.' }, 403);
+      }
+      const category = await createCategory(db, body);
+      return c.json(category, 201);
+    },
+  );
 
   // Listar ítems de una tienda. La RLS acota (miembros ven todo; afuera, solo
   // publicados en comunidad visible), así que no gateamos de más acá.
