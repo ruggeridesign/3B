@@ -1,12 +1,13 @@
 import { auth } from '@3b/auth';
 import { loadEnv } from '@3b/config';
 import type { ApiVariables } from '@3b/core/http';
-import { adminRouter } from '@3b/core/modules/admin';
+import { adminRouter, IMPERSONATE_COOKIE } from '@3b/core/modules/admin';
 import { meRouter, readIsPlatformAdmin } from '@3b/core/modules/identity';
 import { systemRouter } from '@3b/core/modules/system';
-import { createAppDb, withAppContext } from '@3b/db';
+import { createAppDb, sql, withAppContext } from '@3b/db';
 import { serve } from '@hono/node-server';
 import { OpenAPIHono } from '@hono/zod-openapi';
+import { getCookie } from 'hono/cookie';
 
 const env = loadEnv();
 // Conexión con el rol `app` (mínimo privilegio, sujeto a RLS) para el runtime.
@@ -28,13 +29,35 @@ app.use('/v1/*', async (c, next) => {
     c.set('userId', null);
     c.set('db', null);
     c.set('isPlatformAdmin', false);
+    c.set('realUserId', null);
+    c.set('realIsPlatformAdmin', false);
+    c.set('impersonatedBy', null);
     return next();
   }
-  const userId = session.user.id;
-  return withAppContext(appDb.db, { userId }, async (tx) => {
-    c.set('userId', userId);
+  const realUserId = session.user.id;
+  return withAppContext(appDb.db, { userId: realUserId }, async (tx) => {
+    const realIsAdmin = await readIsPlatformAdmin(tx, realUserId);
+
+    // "Ver como": si hay cookie de impersonación y el usuario REAL es admin de
+    // plataforma, el usuario EFECTIVO pasa a ser el objetivo (contexto RLS).
+    const target = getCookie(c, IMPERSONATE_COOKIE);
+    let effectiveUserId = realUserId;
+    let impersonatedBy: ApiVariables['impersonatedBy'] = null;
+    if (target && realIsAdmin && target !== realUserId) {
+      effectiveUserId = target;
+      impersonatedBy = { id: realUserId, email: session.user.email };
+      await tx.execute(sql`select set_config('app.user_id', ${target}, true)`);
+    }
+    const effIsAdmin = impersonatedBy
+      ? await readIsPlatformAdmin(tx, effectiveUserId)
+      : realIsAdmin;
+
+    c.set('realUserId', realUserId);
+    c.set('realIsPlatformAdmin', realIsAdmin);
+    c.set('userId', effectiveUserId);
+    c.set('isPlatformAdmin', effIsAdmin);
+    c.set('impersonatedBy', impersonatedBy);
     c.set('db', tx);
-    c.set('isPlatformAdmin', await readIsPlatformAdmin(tx, userId));
     await next();
   });
 });

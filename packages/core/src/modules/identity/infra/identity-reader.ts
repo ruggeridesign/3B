@@ -85,5 +85,7 @@ export async function readMe(
       name: s.name,
       role: s.role as MeResponse['stores'][number]['role'],
     })),
+    // Lo completa el router según el contexto de impersonación.
+    impersonating: null,
   };
 }

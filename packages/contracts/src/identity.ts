@@ -57,6 +57,13 @@ export const MeStore = z.object({
 export type MeStore = z.infer<typeof MeStore>;
 
 /** Respuesta de `/v1/me`: identidad + capacidades resueltas + alcances. */
+/** Si el superadmin está "viendo como" otro usuario, quién lo impersona. */
+export const Impersonation = z.object({
+  byUserId: z.string(),
+  byEmail: z.string(),
+});
+export type Impersonation = z.infer<typeof Impersonation>;
+
 export const MeResponse = z.object({
   user: z.object({
     id: z.string(),
@@ -66,5 +73,7 @@ export const MeResponse = z.object({
   capabilities: Capabilities,
   communities: z.array(MeCommunity),
   stores: z.array(MeStore),
+  // null salvo que un admin esté impersonando a este usuario ("Ver como").
+  impersonating: Impersonation.nullable(),
 });
 export type MeResponse = z.infer<typeof MeResponse>;

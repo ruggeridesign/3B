@@ -13,6 +13,7 @@ import {
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { signOut } from '../../lib/auth-client';
+import { VerComo } from './ver-como';
 
 export function Navbar({ me }: { me: MeResponse }) {
   const pathname = usePathname();
@@ -67,7 +68,8 @@ export function Navbar({ me }: { me: MeResponse }) {
         })}
       </nav>
 
-      <div className="ml-auto">
+      <div className="ml-auto flex items-center gap-2">
+        {me.capabilities.isPlatformAdmin && <VerComo />}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="sm">

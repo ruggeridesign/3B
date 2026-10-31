@@ -26,6 +26,9 @@ const meSchema = z
     capabilities,
     communities: z.array(scope),
     stores: z.array(scope),
+    impersonating: z
+      .object({ byUserId: z.string(), byEmail: z.string() })
+      .nullable(),
   })
   .openapi('Me');
 
@@ -61,7 +64,14 @@ export function meRouter() {
       if (!me) {
         return c.json({ error: 'No autenticado' }, 401);
       }
-      return c.json(me, 200);
+      const by = c.get('impersonatedBy');
+      return c.json(
+        {
+          ...me,
+          impersonating: by ? { byUserId: by.id, byEmail: by.email } : null,
+        },
+        200,
+      );
     },
   );
   return app;

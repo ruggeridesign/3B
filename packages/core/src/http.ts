@@ -10,7 +10,13 @@ import type { AppTransaction } from '@3b/db';
  * cruda ni confían en datos del cliente.
  */
 export interface ApiVariables {
+  // Usuario EFECTIVO (el que se ve): el real, o el impersonado si hay "Ver como".
   userId: string | null;
   db: AppTransaction | null;
   isPlatformAdmin: boolean;
+  // Usuario REAL de la sesión (quien realmente inició sesión).
+  realUserId: string | null;
+  realIsPlatformAdmin: boolean;
+  // Si hay impersonación activa, quién la hace (el admin real).
+  impersonatedBy: { id: string; email: string } | null;
 }

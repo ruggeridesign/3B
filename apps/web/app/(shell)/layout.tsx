@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { getMe } from '../../lib/me';
+import { ImpersonationBanner } from '../_components/impersonation-banner';
 import { Navbar } from '../_components/navbar';
 
 export default async function ShellLayout({
@@ -14,6 +15,11 @@ export default async function ShellLayout({
   }
   return (
     <div className="min-h-dvh">
+      {me.impersonating && (
+        <ImpersonationBanner
+          viewingAs={{ name: me.user.name, email: me.user.email }}
+        />
+      )}
       <Navbar me={me} />
       <main className="mx-auto max-w-5xl p-6">{children}</main>
     </div>

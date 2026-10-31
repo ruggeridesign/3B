@@ -1,6 +1,6 @@
 // API pública del módulo admin.
 
-export { adminRouter } from './http/routes';
+export { adminRouter, IMPERSONATE_COOKIE } from './http/routes';
 export {
   type AdminUser,
   type AuditEntry,

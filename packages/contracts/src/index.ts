@@ -1,6 +1,7 @@
 export {
   Capabilities,
   CommunityRole,
+  Impersonation,
   MeCommunity,
   MembershipStatus,
   MeResponse,
