@@ -4,6 +4,10 @@ Hoja de ruta hacia el **MVP del piloto** (Playbook v1.0, Fase 1). Vivo: se
 actualiza a medida que avanzamos. Pensado también para repartir trabajo entre
 varias personas en paralelo.
 
+> **Gate antes de M2**: el modelo de datos y objetos debe estar aprobado —
+> [`architecture/data-model.md`](architecture/data-model.md) + ADR-002. No se
+> generan migraciones nuevas hasta entonces.
+
 ## Cómo se construye cada módulo (patrón vertical)
 
 Todo módulo de negocio se implementa como una **rebanada vertical** siguiendo el
@@ -19,6 +23,11 @@ patrón ya probado con `identity`/`community`/`store`:
 6. **`apps/web`** — pantalla(s) en el espacio correspondiente, consumiendo la API.
 7. **Tests**: unit (domain/application) + integración (RLS/RBAC) + e2e en flujos clave.
 8. `pnpm check` **verde** antes de pushear.
+
+**Transversal en cada rebanada (obligatorio):** la cara web contempla desde el
+inicio **PWA** (estados offline/instalable donde aplique), **presupuesto de
+rendimiento** (JS inicial bajo, LCP) y **accesibilidad** (HTML semántico,
+focus-visible, roles/aria). No se dejan para el final.
 
 ## Estado actual (hecho) ✅
 
@@ -51,7 +60,10 @@ patrón ya probado con `identity`/`community`/`store`:
   (KYC), métodos de pago.
 - `catalog`: atributos → plantillas → ítems → ejes/variantes → colecciones;
   validación Zod heredada (global→categoría→tienda); proyección a índice de filtros.
-- _Salida_: un Seller abre una tienda verificada y publica ítems con variantes.
+- **`media` (núcleo)**: tabla `media` + subida con URL firmada (R2 en prod,
+  alternativa local en dev) + procesamiento de imágenes. Lo consumen ítems y tiendas.
+- _Salida_: un Seller abre una tienda verificada y publica ítems con variantes e
+  imágenes.
 
 ### M3 · Inventario en tiempo real + mostrador
 
@@ -67,12 +79,20 @@ patrón ya probado con `identity`/`community`/`store`:
   dinámicos, ficha de ítem/tienda, `ranking` básico.
 - _Salida_: un Maker encuentra y ve ítems/tiendas de su comunidad (y vecinas).
 
-### M5 · Pedido end-to-end
+### M5 · Pedido end-to-end (dividido en entregables comprobables)
 
-- `orders` (carrito multitienda, checkout, máquina de estados), `payments`
-  (reporte de comprobante + confirmación + tasa BCV congelada), `messaging`
-  (chat contextual), `social` (preguntas públicas + reseñas verificadas).
-- _Salida_: pedido completo con comprobante confirmado y reseña.
+- **M5a · Carrito + checkout** (`orders`): carrito multitienda (un pedido por
+  tienda), creación de pedido con `Idempotency-Key`, snapshot de precios/dirección.
+  _Salida_: un Maker crea un pedido `realizado` desde el carrito.
+- **M5b · Máquina de estados del pedido** (`orders` + `order_events`): transiciones
+  válidas (realizado→aceptado→…→completado), reserva/liberación de stock,
+  bitácora inmutable. _Salida_: el Seller mueve un pedido hasta `listo`.
+- **M5c · Pago por comprobante** (`payments`): reporte de pago (referencia única +
+  captura), confirmación/rechazo del Seller, `fx_rate_ves` congelado.
+  _Salida_: pedido `pago_confirmado`.
+- **M5d · Conversación + social** (`messaging` + `social`): chat contextual
+  (ítem/pedido), preguntas públicas, reseñas verificadas al `completado`.
+  _Salida_: pedido `completado` con reseña y un hilo de chat.
 
 ### M6 · Envíos y rastreo
 
@@ -108,11 +128,20 @@ patrón ya probado con `identity`/`community`/`store`:
   críticos a partir de M5.
 - **Observabilidad** (Sentry/pino): hacia el final, antes de producción.
 
-## Reparto en paralelo (p. ej. con Raphaelofwar)
+## Condiciones OBLIGATORIAS para el trabajo paralelo (agentes/devs)
 
-- Los módulos son **verticales independientes**: cada dev toma módulos distintos
-  (p. ej. uno `catalog`, otro `shipping`). Los **límites de dependency-cruiser** y
-  los **contratos Zod** evitan colisiones; las **migraciones son aditivas**.
-- Coordinar por módulo (no tocar el mismo `packages/core/modules/<x>` a la vez).
-- Regla de oro compartida: `pnpm check` verde antes de pushear; `git pull` +
-  `pnpm install` al empezar; nunca editar una migración aplicada.
+Los módulos son **verticales independientes**: cada quien toma módulos distintos
+(p. ej. uno `catalog`, otro `shipping`). Para que el paralelo no colisione, son
+**requisitos no negociables**:
+
+1. **Contratos primero**: todo DTO/enum/estado en `@3b/contracts` (Zod) antes de
+   implementar. Es la frontera tipada entre módulos y con la web.
+2. **Propiedad exclusiva de tablas**: cada tabla tiene **un** módulo dueño (ver
+   `architecture/data-model.md`). Nadie escribe en tablas ajenas: se usa el
+   `index.ts` del módulo o se reacciona a un evento del `outbox`. Lo valida
+   **dependency-cruiser**.
+3. **Coordinar por módulo**: no tocar el mismo `packages/core/modules/<x>` a la vez.
+4. **Migraciones aditivas**: nunca editar una aplicada; una migración nueva por
+   cambio, con su RLS.
+5. **Regla de oro**: `pnpm check` verde antes de pushear; `git pull` + `pnpm install`
+   al empezar.
