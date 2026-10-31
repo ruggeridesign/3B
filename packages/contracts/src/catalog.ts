@@ -47,6 +47,72 @@ export const CreateCategoryInput = z.object({
 });
 export type CreateCategoryInput = z.infer<typeof CreateCategoryInput>;
 
+// ===== Atributos (definiciones con alcance + herencia) =====
+
+/** Alcance de una definición de atributo (D-02): plataforma, categoría o tienda. */
+export const AttributeScope = z.enum(['global', 'category', 'store']);
+export type AttributeScope = z.infer<typeof AttributeScope>;
+
+/** Tipo de dato del valor del atributo. */
+export const AttributeDataType = z.enum(['text', 'number', 'boolean', 'enum']);
+export type AttributeDataType = z.infer<typeof AttributeDataType>;
+
+/** Clave máquina del atributo: minúsculas, empieza con letra, `a-z0-9_`. */
+export const AttributeKey = z
+  .string()
+  .min(2)
+  .max(40)
+  .regex(/^[a-z][a-z0-9_]*$/, 'Usá minúsculas, números y guion bajo.');
+
+/** Definición de un atributo (no el valor; el valor va en el ítem, rebanada 2c). */
+export const AttributeDefinition = z.object({
+  id: z.string(),
+  scope: AttributeScope,
+  scopeId: z.string().nullable(),
+  key: z.string(),
+  label: z.string(),
+  dataType: AttributeDataType,
+  options: z.array(z.string()).nullable(), // valores permitidos si dataType=enum
+  unit: z.string().nullable(),
+  filterable: z.boolean(),
+  variantAxis: z.boolean(),
+  createdAt: z.string(),
+});
+export type AttributeDefinition = z.infer<typeof AttributeDefinition>;
+
+/** Lista de definiciones de atributo (p. ej. las resueltas para una tienda). */
+export const AttributeDefinitionList = z.object({
+  attributes: z.array(AttributeDefinition),
+});
+export type AttributeDefinitionList = z.infer<typeof AttributeDefinitionList>;
+
+/** Campos comunes al crear una definición. */
+const attributeFields = {
+  key: AttributeKey,
+  label: z.string().min(1).max(80),
+  dataType: AttributeDataType,
+  options: z.array(z.string().min(1)).optional(),
+  unit: z.string().max(16).optional(),
+  filterable: z.boolean().optional(),
+  variantAxis: z.boolean().optional(),
+};
+
+/** Alta de una definición con alcance de **tienda** (owner/admin/catalog). */
+export const CreateStoreAttributeInput = z.object(attributeFields);
+export type CreateStoreAttributeInput = z.infer<
+  typeof CreateStoreAttributeInput
+>;
+
+/** Alta de una definición **global o de categoría** (solo admin de plataforma). */
+export const CreateGlobalAttributeInput = z.object({
+  scope: z.enum(['global', 'category']),
+  scopeId: Uuid.nullable().optional(), // requerido si scope=category
+  ...attributeFields,
+});
+export type CreateGlobalAttributeInput = z.infer<
+  typeof CreateGlobalAttributeInput
+>;
+
 /** Un ítem es un producto o un servicio. */
 export const ItemKind = z.enum(['product', 'service']);
 export type ItemKind = z.infer<typeof ItemKind>;

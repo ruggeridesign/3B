@@ -42,9 +42,9 @@
 - **En curso:** **M2 · Tienda + Catálogo + núcleo de media**, por rebanadas
   verticales siguiendo `data-model.md §7`. HECHAS: **store 1 (alta)**, **2
   (equipo/roles)**, **3 (métodos de pago)**, **núcleo de `media` (backend)**,
-  **catalog 1 (ítems)** y **catalog 2a (categorías)**. Siguiente: **catalog 2b —
-  atributos** (definiciones con alcance global/categoría/tienda + herencia), luego
-  variantes; o wirear imágenes (media) a ítems; o KYC.
+  **catalog 1 (ítems)**, **2a (categorías)** y **2b (atributos: definiciones +
+  herencia)**. Siguiente: **catalog 2c** — capturar/validar **valores** de atributo
+  en los ítems (y variantes); luego wirear **imágenes** (media) a ítems; o KYC.
 - **Localhost demo:** `pnpm db:up` + `pnpm --filter @3b/api dev` (8787) +
   `pnpm --filter @3b/web dev` (3000). Usuarios seed, password `Password123!`
   (carlos@3b.test = Seller con 2 tiendas e ítems; admin@3b.test = superadmin +
@@ -58,7 +58,56 @@
 
 ---
 
-## 2026-10-31 · _(este commit)_ · feat — M2 catalog rebanada 2a: categorías (taxonomía)
+## 2026-10-31 · _(este commit)_ · feat — M2 catalog rebanada 2b: atributos (definiciones + herencia)
+
+- **Qué:** sistema de **definiciones de atributo** con alcance (D-02) y su
+  **resolución por herencia**. Tabla `catalog.attribute_definitions`
+  (scope global|category|store, scope_id polimórfico, key/label/data_type/options/
+  unit/filterable/variant_axis). Endpoints: `POST /v1/attributes` (global/categoría,
+  admin de plataforma); `GET/POST /v1/stores/{id}/attributes` y
+  `DELETE .../{attrId}` (alcance tienda, owner/admin/catalog);
+  `GET /v1/stores/{id}/attributes/resolved?categoryId=` (conjunto heredado).
+  Web: sección **Atributos** en `/mi-tienda/[id]` (definiciones propias + preview
+  de los resueltos). Seed con atributos en los 3 alcances.
+- **Por qué:** permite describir ítems con campos tipados y heredables, base para
+  la validación de valores (2c) y los filtros de descubrimiento (M4).
+- **Impacto / archivos:** `packages/contracts/src/catalog.ts` (`AttributeScope`/
+  `AttributeDataType`/`AttributeKey`/`AttributeDefinition(+List)`/
+  `CreateStoreAttributeInput`/`CreateGlobalAttributeInput`);
+  `packages/db/src/schema/catalog.ts` (`attributeDefinitions`) + migración
+  `0010_familiar_annihilus.sql` (tabla + índice único parcial global + **RLS
+  polimórfica + grants**); `packages/db/src/seed.ts` (atributos de ejemplo);
+  `packages/core/src/modules/catalog/infra/attribute-repo.ts` (CRUD + resolución
+  con CTE recursiva) + router (5 rutas) + exports; `apps/web`
+  (`lib/catalog` getStoreAttributes/getResolvedAttributes, `store-attributes.tsx`,
+  página de detalle); `packages/core/test/integration/attribute.test.ts`.
+- **Decisiones de diseño:**
+  - **RLS polimórfica por `scope`:** lectura de global/categoría **pública**; las de
+    tienda solo las ven sus miembros. Escritura: global/categoría = admin de
+    plataforma; tienda = owner/admin/catalog. Todo en una política por operación con
+    ramas por `scope` (usa `is_store_member(scope_id, …)` cuando `scope='store'`).
+  - **Herencia (`resolveAttributes`):** globales + los de la categoría y **sus
+    ancestros** (CTE recursiva sobre `parent_id`) + los de la tienda; si una `key`
+    se repite gana el alcance más específico (tienda > categoría > global). Precedencia
+    por profundidad de categoría queda simplificada.
+  - **Unicidad de clave global:** el `UNIQUE(scope, scope_id, key)` no cubre los
+    globales (en Postgres `NULL` scope_id se trata como distinto), así que un
+    **índice único parcial** `(key) WHERE scope='global'` evita duplicar claves
+    globales (lo detectó el smoke: creaba `marca` dos veces). Las de categoría/tienda
+    sí quedan cubiertas por el UNIQUE compuesto (scope_id no nulo).
+  - Los **valores** de atributo en cada ítem (con validación Zod contra las
+    definiciones resueltas) y las **variantes** quedan para 2c.
+- **Verificación:** `pnpm check` verde (boundaries 224 módulos); integración db 6/6
+  + **core 37/37** (+4 attribute: herencia con/ sin categoría, alta por tienda vs
+  sales, global solo admin, no-miembro no ve los de la tienda); smoke HTTP 10/10
+  (resolución, gating 403, clave global duplicada 409).
+- **Estado para retomar:** **2c** — `items.attributes` jsonb + validación de valores
+  contra `resolveAttributes` + UI de campos dinámicos en el ítem; luego variantes
+  (`item_variants`, ejes desde `variant_axis`). Después, imágenes de ítems (media).
+- **Relacionado:** [data-model §catalog y §7](architecture/data-model.md), ADR-002
+  (D-02), entradas de catalog 1 y 2a.
+
+## 2026-10-31 · `194a70b` · feat — M2 catalog rebanada 2a: categorías (taxonomía)
 
 - **Qué:** taxonomía **global** de categorías (jerárquica) + asignación de
   categoría a los ítems. Endpoints `GET /v1/categories` (pública) y

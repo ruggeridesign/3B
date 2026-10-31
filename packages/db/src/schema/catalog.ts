@@ -1,5 +1,7 @@
 import {
+  boolean,
   index,
+  jsonb,
   numeric,
   pgSchema,
   text,
@@ -33,6 +35,34 @@ export const categories = catalog.table(
   (t) => [
     unique('categories_slug_unique').on(t.slug),
     index('categories_parent_idx').on(t.parentId),
+  ],
+);
+
+/**
+ * Definición de un atributo con **alcance** (D-02): `global` (plataforma),
+ * `category` (scope_id = categoría) o `store` (scope_id = tienda). `scope_id` es
+ * polimórfico (sin FK dura). Los valores de atributo de cada ítem llegan en una
+ * rebanada posterior; acá solo viven las definiciones y su herencia.
+ */
+export const attributeDefinitions = catalog.table(
+  'attribute_definitions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    scope: text('scope').notNull(), // global | category | store
+    scopeId: uuid('scope_id'), // null para global; categoría o tienda si no
+    key: text('key').notNull(),
+    label: text('label').notNull(),
+    dataType: text('data_type').notNull(), // text | number | boolean | enum
+    options: jsonb('options'), // valores permitidos si data_type=enum
+    unit: text('unit'),
+    filterable: boolean('filterable').notNull().default(false),
+    variantAxis: boolean('variant_axis').notNull().default(false),
+    ...timestamps,
+  },
+  (t) => [
+    index('attr_defs_scope_idx').on(t.scope, t.scopeId),
+    // Una misma clave no se repite dentro del mismo alcance.
+    unique('attr_defs_scope_key_unique').on(t.scope, t.scopeId, t.key),
   ],
 );
 

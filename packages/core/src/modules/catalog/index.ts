@@ -2,6 +2,13 @@
 
 export { catalogRouter } from './http/routes';
 export {
+  createGlobalAttribute,
+  createStoreAttribute,
+  deleteAttribute,
+  listStoreAttributes,
+  resolveAttributes,
+} from './infra/attribute-repo';
+export {
   createCategory,
   getCategory,
   listCategories,

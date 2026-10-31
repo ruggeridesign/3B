@@ -3,9 +3,17 @@ import {
   type ApiVariables,
   canManageCatalog,
   isPlatformAdmin,
+  isStoreMember,
   requireSession,
   sessionCtx,
 } from '../../../http';
+import {
+  createGlobalAttribute,
+  createStoreAttribute,
+  deleteAttribute,
+  listStoreAttributes,
+  resolveAttributes,
+} from '../infra/attribute-repo';
 import { createCategory, listCategories } from '../infra/category-repo';
 import {
   createItem,
@@ -109,6 +117,61 @@ const itemParam = z.object({
   id: z.string().openapi({ param: { name: 'id', in: 'path' } }),
   itemId: z.string().openapi({ param: { name: 'itemId', in: 'path' } }),
 });
+
+// ----- Atributos -----
+const attrScope = z.enum(['global', 'category', 'store']);
+const attrDataType = z.enum(['text', 'number', 'boolean', 'enum']);
+const attrKey = z
+  .string()
+  .min(2)
+  .max(40)
+  .regex(/^[a-z][a-z0-9_]*$/);
+
+const attrOut = z
+  .object({
+    id: z.string(),
+    scope: attrScope,
+    scopeId: z.string().nullable(),
+    key: z.string(),
+    label: z.string(),
+    dataType: attrDataType,
+    options: z.array(z.string()).nullable(),
+    unit: z.string().nullable(),
+    filterable: z.boolean(),
+    variantAxis: z.boolean(),
+    createdAt: z.string(),
+  })
+  .openapi('AttributeDefinition');
+
+const attrListOut = z
+  .object({ attributes: z.array(attrOut) })
+  .openapi('AttributeDefinitionList');
+
+const attrFields = {
+  key: attrKey,
+  label: z.string().min(1).max(80),
+  dataType: attrDataType,
+  options: z.array(z.string().min(1)).optional(),
+  unit: z.string().max(16).optional(),
+  filterable: z.boolean().optional(),
+  variantAxis: z.boolean().optional(),
+};
+const createStoreAttrBody = z
+  .object(attrFields)
+  .openapi('CreateStoreAttribute');
+const createGlobalAttrBody = z
+  .object({
+    scope: z.enum(['global', 'category']),
+    scopeId: uuid.nullable().optional(),
+    ...attrFields,
+  })
+  .openapi('CreateGlobalAttribute');
+
+const attrParam = z.object({
+  id: z.string().openapi({ param: { name: 'id', in: 'path' } }),
+  attrId: z.string().openapi({ param: { name: 'attrId', in: 'path' } }),
+});
+const resolvedQuery = z.object({ categoryId: uuid.optional() });
 
 /**
  * Router de catálogo. Vive en su propio módulo (propiedad de `catalog.items`),
@@ -342,6 +405,208 @@ export function catalogRouter() {
       }
       const existed = await deleteItem(db, id, itemId);
       if (!existed) return c.json({ error: 'No existe ese ítem.' }, 404);
+      return c.body(null, 204);
+    },
+  );
+
+  // ===== Atributos =====
+
+  // Crear una definición global o de categoría. Solo admin de plataforma.
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/attributes',
+      tags: ['catalog'],
+      summary: 'Crear un atributo global o de categoría',
+      request: {
+        body: {
+          content: { 'application/json': { schema: createGlobalAttrBody } },
+        },
+      },
+      responses: {
+        201: {
+          description: 'Creado',
+          content: { 'application/json': { schema: attrOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'Solo el admin de plataforma',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        409: {
+          description: 'Clave repetida en el alcance',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const body = c.req.valid('json');
+      if (!(await isPlatformAdmin(db))) {
+        return c.json({ error: 'Solo el admin de plataforma.' }, 403);
+      }
+      const attr = await createGlobalAttribute(db, body);
+      return c.json(attr, 201);
+    },
+  );
+
+  // Definiciones de atributo propias de la tienda (scope=store).
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/stores/{id}/attributes',
+      tags: ['catalog'],
+      summary: 'Atributos propios de la tienda',
+      request: { params: storeParam },
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: attrListOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No podés gestionar el catálogo de esta tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      if (!(await canManageCatalog(db, id))) {
+        return c.json(
+          { error: 'No podés gestionar el catálogo de esta tienda.' },
+          403,
+        );
+      }
+      const attributes = await listStoreAttributes(db, id);
+      return c.json({ attributes }, 200);
+    },
+  );
+
+  // Crear un atributo con alcance de tienda. Solo owner/admin/catalog.
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/stores/{id}/attributes',
+      tags: ['catalog'],
+      summary: 'Crear un atributo de la tienda',
+      request: {
+        params: storeParam,
+        body: {
+          content: { 'application/json': { schema: createStoreAttrBody } },
+        },
+      },
+      responses: {
+        201: {
+          description: 'Creado',
+          content: { 'application/json': { schema: attrOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No podés gestionar el catálogo de esta tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        409: {
+          description: 'Clave repetida en la tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      const body = c.req.valid('json');
+      if (!(await canManageCatalog(db, id))) {
+        return c.json(
+          { error: 'No podés gestionar el catálogo de esta tienda.' },
+          403,
+        );
+      }
+      const attr = await createStoreAttribute(db, id, body);
+      return c.json(attr, 201);
+    },
+  );
+
+  // Atributos RESUELTOS por herencia (global + categoría+ancestros + tienda).
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/stores/{id}/attributes/resolved',
+      tags: ['catalog'],
+      summary: 'Atributos aplicables (herencia) a la tienda/categoría',
+      request: { params: storeParam, query: resolvedQuery },
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: attrListOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No sos miembro de la tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      const { categoryId } = c.req.valid('query');
+      if (!(await isStoreMember(db, id))) {
+        return c.json({ error: 'No sos miembro de esta tienda.' }, 403);
+      }
+      const attributes = await resolveAttributes(db, id, categoryId ?? null);
+      return c.json({ attributes }, 200);
+    },
+  );
+
+  // Borrar una definición de atributo. La RLS gatea por alcance.
+  app.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/stores/{id}/attributes/{attrId}',
+      tags: ['catalog'],
+      summary: 'Borrar un atributo de la tienda',
+      request: { params: attrParam },
+      responses: {
+        204: { description: 'Borrado' },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No podés gestionar el catálogo de esta tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'No existe ese atributo',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id, attrId } = c.req.valid('param');
+      if (!(await canManageCatalog(db, id))) {
+        return c.json(
+          { error: 'No podés gestionar el catálogo de esta tienda.' },
+          403,
+        );
+      }
+      const existed = await deleteAttribute(db, attrId);
+      if (!existed) return c.json({ error: 'No existe ese atributo.' }, 404);
       return c.body(null, 204);
     },
   );

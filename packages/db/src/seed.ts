@@ -219,6 +219,49 @@ async function main() {
     ])
     .onConflictDoNothing();
 
+  // Atributos de ejemplo en los 3 alcances (para ver la herencia):
+  // global (marca, color) + categoría Taladros (voltaje) + tienda (garantía).
+  await db
+    .insert(schema.attributeDefinitions)
+    .values([
+      {
+        scope: 'global',
+        scopeId: null,
+        key: 'marca',
+        label: 'Marca',
+        dataType: 'text',
+        filterable: true,
+      },
+      {
+        scope: 'global',
+        scopeId: null,
+        key: 'color',
+        label: 'Color',
+        dataType: 'enum',
+        options: ['negro', 'blanco', 'azul', 'rojo'],
+        filterable: true,
+        variantAxis: true,
+      },
+      {
+        scope: 'category',
+        scopeId: CAT_TALADROS,
+        key: 'voltaje',
+        label: 'Voltaje',
+        dataType: 'number',
+        unit: 'V',
+        filterable: true,
+      },
+      {
+        scope: 'store',
+        scopeId: S_FERRETERIA,
+        key: 'garantia_meses',
+        label: 'Garantía (meses)',
+        dataType: 'number',
+        unit: 'meses',
+      },
+    ])
+    .onConflictDoNothing();
+
   // Catálogo de ejemplo. `community_id` lo fija igual el trigger desde la tienda;
   // lo pasamos explícito porque la columna es NOT NULL en el insert de Drizzle.
   const publishedAt = new Date('2026-10-31T00:00:00Z');

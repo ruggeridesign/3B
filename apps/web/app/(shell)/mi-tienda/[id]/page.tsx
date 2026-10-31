@@ -1,6 +1,10 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { getCategories } from '../../../../lib/catalog';
+import {
+  getCategories,
+  getResolvedAttributes,
+  getStoreAttributes,
+} from '../../../../lib/catalog';
 import { getMe } from '../../../../lib/me';
 import {
   getPaymentMethods,
@@ -8,6 +12,7 @@ import {
   getStoreItems,
   getStoreMembers,
 } from '../../../../lib/stores';
+import { StoreAttributes } from '../../../_components/store-attributes';
 import { StoreCatalog } from '../../../_components/store-catalog';
 import { StorePayments } from '../../../_components/store-payments';
 import { StoreTeam } from '../../../_components/store-team';
@@ -37,18 +42,22 @@ export default async function StoreDetail({
     );
   }
 
-  const [members, paymentMethods, items, categories] = await Promise.all([
-    getStoreMembers(id),
-    getPaymentMethods(id),
-    getStoreItems(id),
-    getCategories(),
-  ]);
   // El rol del usuario en ESTA tienda define si ve los controles de gestión.
   // La API gatea igual; esto solo decide qué mostramos.
   const myRole = me.stores.find((s) => s.id === id)?.role;
   const canManage = myRole === 'owner' || myRole === 'admin';
   // El catálogo lo gestionan también los miembros con rol `catalog`.
   const canManageCatalog = canManage || myRole === 'catalog';
+
+  const [members, paymentMethods, items, categories, ownAttrs, resolvedAttrs] =
+    await Promise.all([
+      getStoreMembers(id),
+      getPaymentMethods(id),
+      getStoreItems(id),
+      getCategories(),
+      canManageCatalog ? getStoreAttributes(id) : Promise.resolve([]),
+      canManageCatalog ? getResolvedAttributes(id) : Promise.resolve([]),
+    ]);
 
   return (
     <div className="space-y-6">
@@ -76,6 +85,14 @@ export default async function StoreDetail({
         categories={categories}
         canManage={canManageCatalog}
       />
+
+      {canManageCatalog && (
+        <StoreAttributes
+          storeId={store.id}
+          own={ownAttrs}
+          resolved={resolvedAttrs}
+        />
+      )}
 
       <StorePayments
         storeId={store.id}
