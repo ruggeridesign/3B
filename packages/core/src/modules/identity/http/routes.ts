@@ -1,5 +1,5 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
-import type { ApiVariables } from '../../../http';
+import { type ApiVariables, requireSession, sessionCtx } from '../../../http';
 import { readMe } from '../infra/identity-reader';
 
 const capabilities = z.object({
@@ -37,6 +37,7 @@ const errorSchema = z.object({ error: z.string() }).openapi('Error');
 /** Router del módulo identity. Requiere el middleware de auth de la API. */
 export function meRouter() {
   const app = new OpenAPIHono<{ Variables: ApiVariables }>();
+  app.use('/me', requireSession);
   app.openapi(
     createRoute({
       method: 'get',
@@ -55,11 +56,7 @@ export function meRouter() {
       },
     }),
     async (c) => {
-      const userId = c.get('userId');
-      const db = c.get('db');
-      if (!userId || !db) {
-        return c.json({ error: 'No autenticado' }, 401);
-      }
+      const { db, userId } = sessionCtx(c);
       const me = await readMe(db, userId);
       if (!me) {
         return c.json({ error: 'No autenticado' }, 401);

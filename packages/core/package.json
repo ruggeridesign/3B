@@ -6,7 +6,7 @@
   "description": "Lógica de negocio de 3B, organizada por módulos (domain / application / http / infra).",
   "exports": {
     ".": "./src/index.ts",
-    "./http": "./src/http.ts",
+    "./http": "./src/http/index.ts",
     "./modules/system": "./src/modules/system/index.ts",
     "./modules/identity": "./src/modules/identity/index.ts",
     "./modules/admin": "./src/modules/admin/index.ts"

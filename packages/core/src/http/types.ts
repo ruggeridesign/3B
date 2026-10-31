@@ -20,3 +20,6 @@ export interface ApiVariables {
   // Si hay impersonación activa, quién la hace (el admin real).
   impersonatedBy: { id: string; email: string } | null;
 }
+
+/** Entorno Hono tipado con las variables de 3B (para middleware y handlers). */
+export type ApiEnv = { Variables: ApiVariables };

@@ -1,7 +1,13 @@
 import { sql } from '@3b/db';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import { deleteCookie, setCookie } from 'hono/cookie';
-import type { ApiVariables } from '../../../http';
+import {
+  type ApiVariables,
+  realCtx,
+  requirePlatformAdmin,
+  requireRealPlatformAdmin,
+  sessionCtx,
+} from '../../../http';
 import { listUsers, recordAudit } from '../infra/admin-store';
 
 export const IMPERSONATE_COOKIE = '3b_impersonate';
@@ -21,11 +27,27 @@ const impersonateBody = z
   .object({ userId: z.string() })
   .openapi('ImpersonateBody');
 
+const errorResponses = {
+  401: {
+    description: 'No autenticado',
+    content: { 'application/json': { schema: errorSchema } },
+  },
+  403: {
+    description: 'Prohibido',
+    content: { 'application/json': { schema: errorSchema } },
+  },
+} as const;
+
 /** Router del módulo admin. Acciones sensibles → gate + auditoría. */
 export function adminRouter() {
   const app = new OpenAPIHono<{ Variables: ApiVariables }>();
 
-  // Lista de usuarios (gate: admin EFECTIVO).
+  // Gate por capacidad (helpers reutilizables de @3b/core/http):
+  // - lista de usuarios → admin de plataforma EFECTIVO,
+  // - impersonación → admin de plataforma REAL (disponible aun impersonando).
+  app.use('/admin/users', requirePlatformAdmin);
+  app.use('/admin/impersonate', requireRealPlatformAdmin);
+
   app.openapi(
     createRoute({
       method: 'get',
@@ -37,21 +59,11 @@ export function adminRouter() {
           description: 'OK',
           content: { 'application/json': { schema: usersResponse } },
         },
-        401: {
-          description: 'No autenticado',
-          content: { 'application/json': { schema: errorSchema } },
-        },
-        403: {
-          description: 'Prohibido',
-          content: { 'application/json': { schema: errorSchema } },
-        },
+        ...errorResponses,
       },
     }),
     async (c) => {
-      const userId = c.get('userId');
-      const db = c.get('db');
-      if (!userId || !db) return c.json({ error: 'No autenticado' }, 401);
-      if (!c.get('isPlatformAdmin')) return c.json({ error: 'Prohibido' }, 403);
+      const { db, userId } = sessionCtx(c);
       const users = await listUsers(db);
       await recordAudit(db, {
         actorId: userId,
@@ -62,7 +74,7 @@ export function adminRouter() {
     },
   );
 
-  // "Ver como": iniciar impersonación (gate: admin REAL de la sesión).
+  // "Ver como": iniciar impersonación.
   app.openapi(
     createRoute({
       method: 'post',
@@ -79,23 +91,11 @@ export function adminRouter() {
           description: 'OK',
           content: { 'application/json': { schema: okResponse } },
         },
-        401: {
-          description: 'No autenticado',
-          content: { 'application/json': { schema: errorSchema } },
-        },
-        403: {
-          description: 'Prohibido',
-          content: { 'application/json': { schema: errorSchema } },
-        },
+        ...errorResponses,
       },
     }),
     async (c) => {
-      const db = c.get('db');
-      const realUserId = c.get('realUserId');
-      if (!db || !realUserId) return c.json({ error: 'No autenticado' }, 401);
-      if (!c.get('realIsPlatformAdmin')) {
-        return c.json({ error: 'Prohibido' }, 403);
-      }
+      const { db, realUserId } = realCtx(c);
       const { userId: target } = c.req.valid('json');
       setCookie(c, IMPERSONATE_COOKIE, target, {
         httpOnly: true,
@@ -112,7 +112,7 @@ export function adminRouter() {
     },
   );
 
-  // Dejar de impersonar (gate: admin REAL; disponible aun mientras se impersona).
+  // Dejar de impersonar (volver a la propia cuenta).
   app.openapi(
     createRoute({
       method: 'delete',
@@ -124,23 +124,11 @@ export function adminRouter() {
           description: 'OK',
           content: { 'application/json': { schema: okResponse } },
         },
-        401: {
-          description: 'No autenticado',
-          content: { 'application/json': { schema: errorSchema } },
-        },
-        403: {
-          description: 'Prohibido',
-          content: { 'application/json': { schema: errorSchema } },
-        },
+        ...errorResponses,
       },
     }),
     async (c) => {
-      const db = c.get('db');
-      const realUserId = c.get('realUserId');
-      if (!db || !realUserId) return c.json({ error: 'No autenticado' }, 401);
-      if (!c.get('realIsPlatformAdmin')) {
-        return c.json({ error: 'Prohibido' }, 403);
-      }
+      const { db, realUserId } = realCtx(c);
       deleteCookie(c, IMPERSONATE_COOKIE, { path: '/' });
       // Volver el contexto RLS al admin real para auditar como él.
       await db.execute(
