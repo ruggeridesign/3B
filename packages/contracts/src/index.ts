@@ -8,4 +8,13 @@ export {
   MeStore,
   StoreRole,
 } from './identity';
+export {
+  CreateStoreInput,
+  Store,
+  StoreKind,
+  StoreList,
+  StoreSlug,
+  StoreStatus,
+  Uuid,
+} from './store';
 export { HealthResponse } from './system';

@@ -40,8 +40,9 @@
   + seed), **Hito B** (Better Auth + RBAC con alcance + RLS + auditoría + tests de
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización).
 - **En curso:** **M2 · Tienda + Catálogo + núcleo de media**, por rebanadas
-  verticales siguiendo `data-model.md §7`. Primera rebanada: **`store`** (alta de
-  tienda, equipo/roles, verificación).
+  verticales siguiendo `data-model.md §7`. **Store rebanada 1 (alta + "mis
+  tiendas") HECHA**; siguiente: equipo/roles, verificación (KYC) y
+  payment_methods, o avanzar a `catalog`/`media`.
 - **Entorno:** DB en Docker, puerto **5433** (el 5432 es un Postgres nativo).
   `pnpm check` debe quedar verde; `pnpm test:integration` corre RLS/RBAC contra
   DB real. CI en GitHub Actions valida ambos en cada push/PR a `main`.
@@ -50,7 +51,42 @@
 
 ---
 
-## 2026-10-31 · _(este commit)_ · docs — Se crea el DDR (historial de decisiones)
+## 2026-10-31 · _(este commit)_ · feat — M2 store rebanada 1: alta de tienda + "mis tiendas"
+
+- **Qué:** primera rebanada vertical de M2. Un usuario abre una tienda en una
+  comunidad de la que es miembro y ve "mis tiendas". Endpoints `POST /v1/stores`,
+  `GET /v1/stores/mine`, `GET /v1/stores/{id}`. Página web "Mi Tienda" (lista +
+  formulario) y CTA "Abrir una tienda" en el menú de usuario (para que un Maker
+  sin tienda llegue al alta aunque el espacio esté gateado por `isSeller`).
+- **Por qué:** `store` es la base de M2 (catálogo y media cuelgan de una tienda).
+- **Impacto / archivos:** `packages/contracts/src/store.ts` (StoreKind/Status/
+  CreateStoreInput/Store/Uuid); `packages/core/src/modules/store/**` (infra
+  store-repo + http storeRouter); `apps/api` (monta storeRouter + `onError`
+  central); `apps/web` (lib/stores + create-store + página mi-tienda + navbar);
+  `packages/db/migrations/0005_store_owner_membership.sql`.
+- **Decisiones de diseño:**
+  - **Trigger de membresía owner (0005):** bajo RLS el creador no puede insertar
+    su propia fila en `store_members` (la política exige ya ser owner/admin). Un
+    trigger `SECURITY DEFINER` crea la membresía `owner` atómicamente con el
+    INSERT de la tienda, sin abrir un hueco en la política.
+  - **`onError` central para errores de Postgres → HTTP** (`@3b/core/http`
+    `dbErrorResponse`): atrapar la violación de RLS/único DENTRO del handler no
+    sirve, porque la transacción por-request queda abortada y el COMMIT posterior
+    pisa la respuesta con 500. Se deja propagar (rollback limpio) y `onError`
+    traduce el SQLSTATE: 42501→403, 23505→409, 23503→409, 23514/22P02→400.
+  - **UUID lenient (`Uuid`):** los UUID deterministas del seed (`1111-…`) no
+    cumplen la variante RFC, así que `z.string().uuid()` (estricto en Zod 4) los
+    rechaza. Se valida la forma 8-4-4-4-12 hex, que la columna Postgres acepta.
+  - Sin columnas extra todavía (geo, verificación/KYC, rating, payment_methods):
+    van en slices posteriores de M2 con su propia migración.
+- **Verificación:** `pnpm check` verde; integración 6/6 (db) + 12/12 (core,
+  incluye 3 de store); smoke HTTP 401/201/403/409/400 + `/mine`.
+- **Estado para retomar:** siguiente slice de store: **equipo/roles**
+  (invitar miembros, gatear con `canManageStore`) y luego **verificación (KYC)** y
+  **payment_methods**; o avanzar a `catalog`/`media`. Falta tabla y RLS de esas.
+- **Relacionado:** [data-model §store y §7](architecture/data-model.md), ADR-002.
+
+## 2026-10-31 · `5a5691a` · docs — Se crea el DDR (historial de decisiones)
 
 - **Qué:** se crea `docs/DDR.md` (este archivo) con el estado actual + backfill de
   todas las decisiones/commits hasta hoy; se documenta la convención en

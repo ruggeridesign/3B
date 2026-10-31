@@ -79,6 +79,12 @@ export function Navbar({ me }: { me: MeResponse }) {
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>{me.user.email}</DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link href="/mi-tienda">
+                {me.capabilities.isSeller ? 'Mi Tienda' : 'Abrir una tienda'}
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onLogout}>
               Cerrar sesión
             </DropdownMenuItem>

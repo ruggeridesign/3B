@@ -11,6 +11,7 @@ export {
   isPlatformAdmin,
   isStoreMember,
 } from './authz';
+export { type DbErrorResponse, dbErrorResponse, pgCode } from './errors';
 export {
   realCtx,
   requirePlatformAdmin,

@@ -9,7 +9,8 @@
     "./http": "./src/http/index.ts",
     "./modules/system": "./src/modules/system/index.ts",
     "./modules/identity": "./src/modules/identity/index.ts",
-    "./modules/admin": "./src/modules/admin/index.ts"
+    "./modules/admin": "./src/modules/admin/index.ts",
+    "./modules/store": "./src/modules/store/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

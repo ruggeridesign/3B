@@ -1,8 +1,9 @@
 import { auth } from '@3b/auth';
 import { loadEnv } from '@3b/config';
-import type { ApiVariables } from '@3b/core/http';
+import { type ApiVariables, dbErrorResponse } from '@3b/core/http';
 import { adminRouter, IMPERSONATE_COOKIE } from '@3b/core/modules/admin';
 import { meRouter, readIsPlatformAdmin } from '@3b/core/modules/identity';
+import { storeRouter } from '@3b/core/modules/store';
 import { systemRouter } from '@3b/core/modules/system';
 import { createAppDb, sql, withAppContext } from '@3b/db';
 import { serve } from '@hono/node-server';
@@ -66,6 +67,7 @@ app.use('/v1/*', async (c, next) => {
 app.route('/v1', systemRouter());
 app.route('/v1', meRouter());
 app.route('/v1', adminRouter());
+app.route('/v1', storeRouter());
 
 // Documento OpenAPI (contrato de la API).
 app.doc('/openapi.json', {
@@ -84,6 +86,15 @@ app.get('/docs', (c) =>
       '</body></html>',
   ),
 );
+
+// Manejo central de errores: traduce errores de Postgres (RLS, únicos, FK…) a
+// respuestas HTTP coherentes. Ver `@3b/core/http` → dbErrorResponse.
+app.onError((err, c) => {
+  const mapped = dbErrorResponse(err);
+  if (mapped) return c.json({ error: mapped.error }, mapped.status);
+  console.error('[3b-api] error no manejado:', err);
+  return c.json({ error: 'Error interno' }, 500);
+});
 
 serve({ fetch: app.fetch, port: env.API_PORT }, (info) => {
   console.log(`[3b-api] http://localhost:${info.port}  (docs: /docs)`);
