@@ -7,6 +7,12 @@ import {
   sessionCtx,
 } from '../../../http';
 import {
+  createPaymentMethod,
+  deletePaymentMethod,
+  listPaymentMethods,
+  updatePaymentMethod,
+} from '../infra/payment-repo';
+import {
   addStoreMember,
   createStore,
   findUserIdByEmail,
@@ -90,8 +96,59 @@ const updateMemberBody = z
   .object({ role: assignableRole })
   .openapi('UpdateStoreMember');
 
+const paymentType = z.enum([
+  'pago_movil',
+  'transferencia',
+  'zelle',
+  'binance',
+  'efectivo',
+  'otro',
+]);
+const paymentDetails = z.record(z.string(), z.string());
+
+const paymentOut = z
+  .object({
+    id: z.string(),
+    storeId: z.string(),
+    type: paymentType,
+    details: paymentDetails,
+    active: z.boolean(),
+    createdAt: z.string(),
+  })
+  .openapi('PaymentMethod');
+
+const paymentListOut = z
+  .object({ paymentMethods: z.array(paymentOut) })
+  .openapi('PaymentMethodList');
+
+const createPaymentBody = z
+  .object({
+    type: paymentType,
+    details: paymentDetails,
+    active: z.boolean().optional(),
+  })
+  .openapi('CreatePaymentMethod');
+
+const updatePaymentBody = z
+  .object({
+    details: paymentDetails.optional(),
+    active: z.boolean().optional(),
+  })
+  .openapi('UpdatePaymentMethod');
+
+const paymentParam = z.object({
+  id: z.string().openapi({ param: { name: 'id', in: 'path' } }),
+  pmId: z.string().openapi({ param: { name: 'pmId', in: 'path' } }),
+});
+
+/** Opciones del router de store (config inyectada desde la app). */
+export interface StoreRouterOptions {
+  /** Passphrase para cifrar/descifrar detalles de métodos de pago (pgcrypto). */
+  paymentsEncKey: string;
+}
+
 /** Router del módulo store. Todas las rutas requieren sesión. */
-export function storeRouter() {
+export function storeRouter({ paymentsEncKey }: StoreRouterOptions) {
   const app = new OpenAPIHono<{ Variables: ApiVariables }>();
   app.use('*', requireSession);
 
@@ -389,6 +446,175 @@ export function storeRouter() {
           { error: 'No se puede quitar al dueño de la tienda.' },
           409,
         );
+      }
+      return c.body(null, 204);
+    },
+  );
+
+  // ===== Métodos de pago =====
+
+  // Listar los métodos de pago. Cualquier miembro de la tienda (los detalles
+  // viajan descifrados; la RLS ya acota a miembros).
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/stores/{id}/payment-methods',
+      tags: ['store'],
+      summary: 'Métodos de pago de la tienda',
+      request: { params: idParam },
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: paymentListOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No sos miembro de la tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      if (!(await isStoreMember(db, id))) {
+        return c.json({ error: 'No sos miembro de esta tienda.' }, 403);
+      }
+      const paymentMethods = await listPaymentMethods(db, paymentsEncKey, id);
+      return c.json({ paymentMethods }, 200);
+    },
+  );
+
+  // Alta de un método de pago. Solo owner/admin.
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/stores/{id}/payment-methods',
+      tags: ['store'],
+      summary: 'Agregar un método de pago',
+      request: {
+        params: idParam,
+        body: {
+          content: { 'application/json': { schema: createPaymentBody } },
+        },
+      },
+      responses: {
+        201: {
+          description: 'Creado',
+          content: { 'application/json': { schema: paymentOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No podés administrar esta tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      const body = c.req.valid('json');
+      if (!(await canManageStore(db, id))) {
+        return c.json({ error: 'No podés administrar esta tienda.' }, 403);
+      }
+      const pm = await createPaymentMethod(db, paymentsEncKey, {
+        storeId: id,
+        ...body,
+      });
+      return c.json(pm, 201);
+    },
+  );
+
+  // Editar un método de pago (detalles y/o activo). Solo owner/admin.
+  app.openapi(
+    createRoute({
+      method: 'patch',
+      path: '/stores/{id}/payment-methods/{pmId}',
+      tags: ['store'],
+      summary: 'Editar un método de pago',
+      request: {
+        params: paymentParam,
+        body: {
+          content: { 'application/json': { schema: updatePaymentBody } },
+        },
+      },
+      responses: {
+        200: {
+          description: 'Actualizado',
+          content: { 'application/json': { schema: paymentOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No podés administrar esta tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'No existe ese método de pago',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id, pmId } = c.req.valid('param');
+      const body = c.req.valid('json');
+      if (!(await canManageStore(db, id))) {
+        return c.json({ error: 'No podés administrar esta tienda.' }, 403);
+      }
+      const pm = await updatePaymentMethod(db, paymentsEncKey, {
+        storeId: id,
+        id: pmId,
+        ...body,
+      });
+      if (!pm) {
+        return c.json({ error: 'No existe ese método de pago.' }, 404);
+      }
+      return c.json(pm, 200);
+    },
+  );
+
+  // Borrar un método de pago. Solo owner/admin.
+  app.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/stores/{id}/payment-methods/{pmId}',
+      tags: ['store'],
+      summary: 'Borrar un método de pago',
+      request: { params: paymentParam },
+      responses: {
+        204: { description: 'Borrado' },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No podés administrar esta tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'No existe ese método de pago',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id, pmId } = c.req.valid('param');
+      if (!(await canManageStore(db, id))) {
+        return c.json({ error: 'No podés administrar esta tienda.' }, 403);
+      }
+      const existed = await deletePaymentMethod(db, id, pmId);
+      if (!existed) {
+        return c.json({ error: 'No existe ese método de pago.' }, 404);
       }
       return c.body(null, 204);
     },

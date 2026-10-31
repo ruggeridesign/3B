@@ -10,8 +10,13 @@ export {
 } from './identity';
 export {
   AssignableStoreRole,
+  CreatePaymentMethodInput,
   CreateStoreInput,
   InviteStoreMemberInput,
+  PaymentMethod,
+  PaymentMethodDetails,
+  PaymentMethodList,
+  PaymentMethodType,
   Store,
   StoreKind,
   StoreList,
@@ -19,6 +24,7 @@ export {
   StoreMemberList,
   StoreSlug,
   StoreStatus,
+  UpdatePaymentMethodInput,
   UpdateStoreMemberInput,
   Uuid,
 } from './store';

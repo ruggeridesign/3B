@@ -1,7 +1,12 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getMe } from '../../../../lib/me';
-import { getStore, getStoreMembers } from '../../../../lib/stores';
+import {
+  getPaymentMethods,
+  getStore,
+  getStoreMembers,
+} from '../../../../lib/stores';
+import { StorePayments } from '../../../_components/store-payments';
 import { StoreTeam } from '../../../_components/store-team';
 
 export default async function StoreDetail({
@@ -29,7 +34,10 @@ export default async function StoreDetail({
     );
   }
 
-  const members = await getStoreMembers(id);
+  const [members, paymentMethods] = await Promise.all([
+    getStoreMembers(id),
+    getPaymentMethods(id),
+  ]);
   // El rol del usuario en ESTA tienda define si ve los controles de gestión.
   // La API gatea igual; esto solo decide qué mostramos.
   const myRole = me.stores.find((s) => s.id === id)?.role;
@@ -52,6 +60,12 @@ export default async function StoreDetail({
         storeId={store.id}
         ownerId={store.ownerId}
         members={members}
+        canManage={canManage}
+      />
+
+      <StorePayments
+        storeId={store.id}
+        methods={paymentMethods}
         canManage={canManage}
       />
     </div>

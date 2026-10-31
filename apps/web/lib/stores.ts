@@ -1,4 +1,4 @@
-import type { Store, StoreMember } from '@3b/contracts';
+import type { PaymentMethod, Store, StoreMember } from '@3b/contracts';
 import { cookies } from 'next/headers';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787';
@@ -56,6 +56,23 @@ export async function getStoreMembers(id: string): Promise<StoreMember[]> {
     if (!res.ok) return [];
     const data = (await res.json()) as { members: StoreMember[] };
     return data.members;
+  } catch {
+    return [];
+  }
+}
+
+/** Métodos de pago de una tienda. [] si no sos miembro o falla. */
+export async function getPaymentMethods(id: string): Promise<PaymentMethod[]> {
+  const cookie = await cookieHeader();
+  if (!cookie) return [];
+  try {
+    const res = await fetch(`${API}/v1/stores/${id}/payment-methods`, {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { paymentMethods: PaymentMethod[] };
+    return data.paymentMethods;
   } catch {
     return [];
   }

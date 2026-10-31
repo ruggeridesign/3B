@@ -67,7 +67,7 @@ app.use('/v1/*', async (c, next) => {
 app.route('/v1', systemRouter());
 app.route('/v1', meRouter());
 app.route('/v1', adminRouter());
-app.route('/v1', storeRouter());
+app.route('/v1', storeRouter({ paymentsEncKey: env.PAYMENTS_ENC_KEY }));
 
 // Documento OpenAPI (contrato de la API).
 app.doc('/openapi.json', {

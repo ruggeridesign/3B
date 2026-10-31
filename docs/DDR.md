@@ -40,9 +40,10 @@
   + seed), **Hito B** (Better Auth + RBAC con alcance + RLS + auditoría + tests de
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización).
 - **En curso:** **M2 · Tienda + Catálogo + núcleo de media**, por rebanadas
-  verticales siguiendo `data-model.md §7`. **Store rebanada 1 (alta + "mis
-  tiendas")** y **rebanada 2 (equipo/roles) HECHAS**; siguiente: verificación
-  (KYC) y payment_methods, o avanzar a `catalog`/`media`.
+  verticales siguiendo `data-model.md §7`. **Store rebanadas 1 (alta + "mis
+  tiendas")**, **2 (equipo/roles)** y **3 (métodos de pago) HECHAS**; siguiente:
+  verificación (KYC) — requiere el núcleo de `media` primero—, o avanzar a
+  `catalog`/`media`.
 - **Entorno:** DB en Docker, puerto **5433** (el 5432 es un Postgres nativo).
   `pnpm check` debe quedar verde; `pnpm test:integration` corre RLS/RBAC contra
   DB real. CI en GitHub Actions valida ambos en cada push/PR a `main`.
@@ -51,7 +52,55 @@
 
 ---
 
-## 2026-10-31 · _(este commit)_ · feat — M2 store rebanada 2: equipo/roles
+## 2026-10-31 · _(este commit)_ · feat — M2 store rebanada 3: métodos de pago (cifrados)
+
+- **Qué:** una tienda carga sus medios de cobro (pago móvil, transferencia,
+  Zelle, Binance, efectivo, otro). Tabla nueva `store.payment_methods` con los
+  `details` **cifrados en reposo** (pgcrypto `pgp_sym_*`, base64). Endpoints
+  `GET/POST /v1/stores/{id}/payment-methods` y
+  `PATCH/DELETE /v1/stores/{id}/payment-methods/{pmId}`. En la página de detalle
+  de la tienda: listado + alta con campos sugeridos por tipo + activar/desactivar
+  + borrar (controles solo a managers).
+- **Por qué:** tercer paso de M2 en store, autocontenido (un solo módulo, sin
+  dependencias nuevas). Base para el checkout de M5. Se eligió antes que KYC
+  porque KYC necesita el núcleo de `media` (imágenes del documento) y un flujo de
+  revisión por admin de comunidad, todavía no construidos.
+- **Impacto / archivos:** `packages/config/src/env.ts` (`PAYMENTS_ENC_KEY`, con
+  default solo-dev); `packages/contracts/src/store.ts` (`PaymentMethodType`/
+  `PaymentMethodDetails`/`PaymentMethod`/`PaymentMethodList`/`CreatePaymentMethodInput`/
+  `UpdatePaymentMethodInput`); `packages/db/src/schema/store.ts` (`paymentMethods`)
+  + migración `0006_confused_madelyne_pryor.sql` (tabla **+ RLS + grants anexados**);
+  `packages/core/src/modules/store/infra/payment-repo.ts` (SQL crudo para cifrar/
+  descifrar), `.../http/routes.ts` (4 rutas + `storeRouter` ahora recibe
+  `{ paymentsEncKey }`), `.../index.ts`; `apps/api/src/index.ts` (pasa la clave);
+  `apps/web/lib/stores.ts` (`getPaymentMethods`), `.../_components/store-payments.tsx`,
+  `.../mi-tienda/[id]/page.tsx`; `packages/core/test/integration/payment.test.ts`.
+- **Decisiones de diseño:**
+  - **Cifrado en reposo con pgcrypto** (no diferido): `details` se guarda como
+    base64 de `pgp_sym_encrypt(json, clave)`. La passphrase llega por **parámetro**
+    desde `apps/api` (dueño de env) hasta el repo y el router — **core nunca importa
+    `@3b/config`** (es solo devDependency; lo exige boundaries). Default solo-dev,
+    igual que `BETTER_AUTH_SECRET`.
+  - **RLS/grants anexados a la migración generada (`0006`)** en vez de una migración
+    a mano aparte: evita duplicar el snapshot de meta (lo que ya había roto el chain
+    0004/0005) y deja tabla+seguridad atómicas. De paso se corrigió el `id/prevId`
+    de `0005_snapshot.json` (era copia literal de 0004) para que `generate` arme bien
+    la cadena. Políticas: ver = cualquier miembro; escribir = owner/admin.
+  - **`details` como mapa flexible** (`Record<string,string>`); validación por tipo
+    queda para después. La web ofrece campos sugeridos por tipo.
+  - La visibilidad de los métodos para el **comprador** en el checkout (M5) será una
+    política RLS aparte; hoy solo ven los miembros de la tienda.
+- **Verificación:** `pnpm check` verde; integración db 6/6 + **core 21/21** (+5 de
+  pagos: round-trip del cifrado, que la columna **no** guarda el claro, editar/borrar,
+  y RLS que deja a `sales` listar pero no crear, y a un no-miembro nada); smoke HTTP
+  11/11 (200/403/403/403/201/200/200/404/204/404).
+- **Estado para retomar:** siguiente: **verificación (KYC)** tras el núcleo de
+  `media`, o abrir `catalog`/`media`. Pendientes de pagos: validación de `details`
+  por tipo y la política de visibilidad para el comprador (M5).
+- **Relacionado:** [data-model §store y §7](architecture/data-model.md), ADR-001,
+  entradas de las rebanadas 1 y 2.
+
+## 2026-10-31 · `9eeb8e5` · feat — M2 store rebanada 2: equipo/roles
 
 - **Qué:** gestión del equipo de una tienda sobre `store.store_members`.
   Endpoints `GET /v1/stores/{id}/members`, `POST /v1/stores/{id}/members`

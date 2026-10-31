@@ -43,6 +43,13 @@
       "when": 1793470900000,
       "tag": "0005_store_owner_membership",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793472659022,
+      "tag": "0006_confused_madelyne_pryor",
+      "breakpoints": true
     }
   ]
 }

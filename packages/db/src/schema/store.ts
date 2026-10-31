@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   pgSchema,
   primaryKey,
@@ -53,4 +54,24 @@ export const storeMembers = store.table(
     primaryKey({ columns: [t.storeId, t.userId] }),
     index('store_members_user_idx').on(t.userId),
   ],
+);
+
+/**
+ * Método de cobro de una tienda. `details` guarda el JSON de los campos del
+ * método **cifrado en reposo** (base64 de `pgp_sym_encrypt`, pgcrypto); el repo
+ * lo cifra/descifra con la passphrase de entorno. Nunca se escribe en claro.
+ */
+export const paymentMethods = store.table(
+  'payment_methods',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    type: text('type').notNull(), // pago_movil | transferencia | zelle | binance | efectivo | otro
+    details: text('details').notNull(), // base64(pgp_sym_encrypt(json))
+    active: boolean('active').notNull().default(true),
+    ...timestamps,
+  },
+  (t) => [index('payment_methods_store_idx').on(t.storeId)],
 );

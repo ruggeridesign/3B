@@ -31,6 +31,13 @@ const envSchema = z.object({
   // Google OAuth: opcional. El desarrollo NO depende de estas credenciales.
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
+
+  // Passphrase para cifrar los detalles de métodos de pago en reposo (pgcrypto,
+  // pgp_sym_*). Default SOLO para desarrollo; en producción se debe sobrescribir.
+  PAYMENTS_ENC_KEY: z
+    .string()
+    .min(16)
+    .default('dev-only-payments-key-change-me-0123456789'),
 });
 
 export type Env = z.infer<typeof envSchema>;

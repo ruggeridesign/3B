@@ -1,6 +1,13 @@
 // API pública del módulo store.
 
-export { storeRouter } from './http/routes';
+export { type StoreRouterOptions, storeRouter } from './http/routes';
+export {
+  createPaymentMethod,
+  deletePaymentMethod,
+  getPaymentMethod,
+  listPaymentMethods,
+  updatePaymentMethod,
+} from './infra/payment-repo';
 export {
   addStoreMember,
   createStore,

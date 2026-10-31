@@ -97,3 +97,56 @@ export type InviteStoreMemberInput = z.infer<typeof InviteStoreMemberInput>;
 /** Cambiar el rol de un miembro existente. */
 export const UpdateStoreMemberInput = z.object({ role: AssignableStoreRole });
 export type UpdateStoreMemberInput = z.infer<typeof UpdateStoreMemberInput>;
+
+// ===== Métodos de pago =====
+
+/** Medio por el que la tienda recibe pagos (contexto Venezuela). */
+export const PaymentMethodType = z.enum([
+  'pago_movil',
+  'transferencia',
+  'zelle',
+  'binance',
+  'efectivo',
+  'otro',
+]);
+export type PaymentMethodType = z.infer<typeof PaymentMethodType>;
+
+/**
+ * Detalles del método de pago: mapa flexible de campos según el tipo (p. ej.
+ * `{ telefono, banco, cedula }` para pago móvil, `{ email }` para Zelle). Se
+ * guardan **cifrados en reposo**. La validación por tipo llegará más adelante.
+ */
+export const PaymentMethodDetails = z.record(z.string(), z.string());
+export type PaymentMethodDetails = z.infer<typeof PaymentMethodDetails>;
+
+/** Representación de un método de pago (los detalles van descifrados al dueño). */
+export const PaymentMethod = z.object({
+  id: z.string(),
+  storeId: z.string(),
+  type: PaymentMethodType,
+  details: PaymentMethodDetails,
+  active: z.boolean(),
+  createdAt: z.string(),
+});
+export type PaymentMethod = z.infer<typeof PaymentMethod>;
+
+/** Lista de métodos de pago de una tienda. */
+export const PaymentMethodList = z.object({
+  paymentMethods: z.array(PaymentMethod),
+});
+export type PaymentMethodList = z.infer<typeof PaymentMethodList>;
+
+/** Alta de un método de pago. */
+export const CreatePaymentMethodInput = z.object({
+  type: PaymentMethodType,
+  details: PaymentMethodDetails,
+  active: z.boolean().optional(),
+});
+export type CreatePaymentMethodInput = z.infer<typeof CreatePaymentMethodInput>;
+
+/** Edición parcial: cambiar detalles y/o activar/desactivar. */
+export const UpdatePaymentMethodInput = z.object({
+  details: PaymentMethodDetails.optional(),
+  active: z.boolean().optional(),
+});
+export type UpdatePaymentMethodInput = z.infer<typeof UpdatePaymentMethodInput>;
