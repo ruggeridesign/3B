@@ -1,0 +1,68 @@
+# CI de 3B — protege `main` (clave con varios devs en la misma rama).
+#   * check:       lint + typecheck + test unit + límites de módulos (sin DB).
+#   * integration: Postgres 17 + PostGIS de servicio → reset + migraciones + seed
+#                  → tests de aislamiento RLS (db) y de capacidades RBAC (core).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Un push nuevo cancela la corrida anterior de la misma rama.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: check (lint · typecheck · test · boundaries)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # usa packageManager de package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+
+  integration:
+    name: integration (RLS + RBAC contra DB real)
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_USER: 3b
+          POSTGRES_PASSWORD: 3b
+          POSTGRES_DB: 3b
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U 3b -d 3b"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # El rol OWNER (migraciones/seed) y el rol APP (runtime, sujeto a RLS).
+      DATABASE_URL: postgresql://3b:3b@localhost:5432/3b
+      APP_DATABASE_URL: postgresql://app:app@localhost:5432/3b
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # El service container no monta /docker-entrypoint-initdb.d: ejecutamos
+      # el mismo bootstrap que en local (extensiones + rol `app` de mínimo
+      # privilegio) con el cliente psql ya presente en el runner.
+      - name: Bootstrap de la base (extensiones + rol app)
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f infra/db/init/01-init.sql
+      # reset + migraciones + seed (determinista) + credenciales, y luego los
+      # tests de integración de todos los paquetes que los definen (db, core).
+      - run: pnpm test:integration
