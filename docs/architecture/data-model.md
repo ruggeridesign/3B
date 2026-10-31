@@ -1,7 +1,7 @@
 # 3B — Modelo de datos y objetos (MVP)
 
-> **Estado: PROPUESTA — en revisión arquitectónica.** No implementar M2 ni generar
-> migraciones nuevas hasta aprobar este diseño. Fuente funcional: **Playbook v1.0**.
+> **Estado: APROBADO** (ADR-002 Aceptada); abierto a revisión del equipo. Las
+> migraciones de M2 pueden comenzar siguiendo §7. Fuente funcional: **Playbook v1.0**.
 > Reconcilia lo **ya implementado** (identity/community/store + auth + RLS) con el
 > modelo objetivo del MVP (Playbook Fase 1).
 

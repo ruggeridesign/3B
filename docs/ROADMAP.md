@@ -4,9 +4,9 @@ Hoja de ruta hacia el **MVP del piloto** (Playbook v1.0, Fase 1). Vivo: se
 actualiza a medida que avanzamos. Pensado también para repartir trabajo entre
 varias personas en paralelo.
 
-> **Gate antes de M2**: el modelo de datos y objetos debe estar aprobado —
-> [`architecture/data-model.md`](architecture/data-model.md) + ADR-002. No se
-> generan migraciones nuevas hasta entonces.
+> **Gate antes de M2**: ✅ modelo de datos **aprobado** —
+> [`architecture/data-model.md`](architecture/data-model.md) + ADR-002. M2 puede
+> comenzar siguiendo el plan de migraciones incrementales (§7 del modelo).
 
 ## Cómo se construye cada módulo (patrón vertical)
 
