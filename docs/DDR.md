@@ -41,8 +41,8 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización).
 - **En curso:** **M2 · Tienda + Catálogo + núcleo de media**, por rebanadas
   verticales siguiendo `data-model.md §7`. **Store rebanada 1 (alta + "mis
-  tiendas") HECHA**; siguiente: equipo/roles, verificación (KYC) y
-  payment_methods, o avanzar a `catalog`/`media`.
+  tiendas")** y **rebanada 2 (equipo/roles) HECHAS**; siguiente: verificación
+  (KYC) y payment_methods, o avanzar a `catalog`/`media`.
 - **Entorno:** DB en Docker, puerto **5433** (el 5432 es un Postgres nativo).
   `pnpm check` debe quedar verde; `pnpm test:integration` corre RLS/RBAC contra
   DB real. CI en GitHub Actions valida ambos en cada push/PR a `main`.
@@ -51,7 +51,58 @@
 
 ---
 
-## 2026-10-31 · _(este commit)_ · feat — M2 store rebanada 1: alta de tienda + "mis tiendas"
+## 2026-10-31 · _(este commit)_ · feat — M2 store rebanada 2: equipo/roles
+
+- **Qué:** gestión del equipo de una tienda sobre `store.store_members`.
+  Endpoints `GET /v1/stores/{id}/members`, `POST /v1/stores/{id}/members`
+  (invitar por email), `PATCH /v1/stores/{id}/members/{userId}` (cambiar rol) y
+  `DELETE /v1/stores/{id}/members/{userId}` (quitar). Página web de detalle
+  `/mi-tienda/[id]` con el roster + invitar/cambiar rol/quitar (controles visibles
+  solo a managers; la API gatea igual). Cada tienda de "mis tiendas" enlaza a su
+  detalle.
+- **Por qué:** una tienda la opera un equipo, no solo el dueño; segundo paso
+  natural de M2 tras el alta. No hubo migración: `store_members` y su RLS ya
+  existían desde Hito B.
+- **Impacto / archivos:** `packages/contracts/src/store.ts`
+  (`AssignableStoreRole`/`StoreMember`/`StoreMemberList`/`InviteStoreMemberInput`/
+  `UpdateStoreMemberInput`); `packages/core/src/modules/store/infra/store-repo.ts`
+  (`listStoreMembers`, `findUserIdByEmail`, `addStoreMember`,
+  `updateStoreMemberRole`, `removeStoreMember`); `.../store/http/routes.ts` (4
+  rutas nuevas) y `.../store/index.ts`; `apps/web/lib/stores.ts` (`getStore`,
+  `getStoreMembers`), `apps/web/app/(shell)/mi-tienda/[id]/page.tsx`,
+  `apps/web/app/_components/store-team.tsx`, lista enlazada en `mi-tienda/page.tsx`;
+  `packages/core/test/integration/store.test.ts` (+4 tests).
+- **Decisiones de diseño:**
+  - **Invitar por email, no por UUID:** el servidor resuelve email→usuario bajo la
+    RLS `users_select`, que solo deja ver a quien **comparte comunidad** con el que
+    invita. Si no aparece (no existe o la RLS lo oculta) → `404` sin filtrar cuál.
+    Es la UX natural y evita exponer UUID crudos en la web.
+  - **Roles asignables por API = `admin|catalog|sales`** (nunca `owner`): la
+    titularidad la fija el trigger de alta (rebanada 1); transferirla es otro flujo.
+  - **Invariante del dueño en el repo** (no en el handler): `updateStoreMemberRole`/
+    `removeStoreMember` devuelven un resultado discriminado
+    (`ok | not_found | owner_protected`) y se niegan a tocar al `owner`. Va en el
+    repo para que los tests de integración por-repo (patrón de la rebanada 1) lo
+    cubran sin levantar HTTP y sin provocar un 500. El handler mapea a 200/404/409.
+  - **`LEFT JOIN` a `users` en el roster:** así ningún miembro desaparece del
+    listado si la RLS de `users` oculta su fila (name/email quedan en null, el rol
+    siempre se ve).
+  - Gating en capas: `GET` exige ser miembro (`isStoreMember`), las mutaciones
+    `canManageStore` (owner/admin) — ambos derivados de las mismas `authz.*` que la
+    RLS. Un miembro repetido viola la PK (23505) → el `onError` central lo pasa a 409.
+- **Verificación:** `pnpm check` verde; integración 6/6 (db) + **16/16 (core**,
+  incluye 4 de equipo: roster, invitar→cambiar rol→quitar, invariante del dueño,
+  y RLS que bloquea a un `sales` invitando); smoke HTTP 11/11 (200/403/404/201/409/
+  403/409/409/200/204).
+- **Estado para retomar:** siguientes slices de store: **verificación (KYC)**
+  (`identity.kyc_submissions` + `stores.verification_level`, migración + RLS) y
+  **payment_methods** (`details` cifrados, migración + RLS); o avanzar a
+  `catalog`/`media`. Transferencia de titularidad y un flujo de invitación con
+  estado `pending` quedan pendientes (hoy la membresía es inmediata).
+- **Relacionado:** [data-model §store y §7](architecture/data-model.md), ADR-001
+  (seguridad en capas), entrada de la rebanada 1.
+
+## 2026-10-31 · `b47c11a` · feat — M2 store rebanada 1: alta de tienda + "mis tiendas"
 
 - **Qué:** primera rebanada vertical de M2. Un usuario abre una tienda en una
   comunidad de la que es miembro y ve "mis tiendas". Endpoints `POST /v1/stores`,

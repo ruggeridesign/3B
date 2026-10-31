@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { StoreRole } from './identity';
 
 /**
  * Contratos del módulo `store` (tienda). Fuente única de verdad entre la API,
@@ -61,3 +62,38 @@ export type Store = z.infer<typeof Store>;
 /** Lista de tiendas (p. ej. las del usuario). */
 export const StoreList = z.object({ stores: z.array(Store) });
 export type StoreList = z.infer<typeof StoreList>;
+
+/**
+ * Roles que se pueden ASIGNAR a un miembro desde la API (equipo de la tienda).
+ * Excluye `owner`: la titularidad la fija el trigger de alta y transferirla es
+ * un flujo aparte. Ver `StoreRole` (conjunto completo) en `./identity`.
+ */
+export const AssignableStoreRole = z.enum(['admin', 'catalog', 'sales']);
+export type AssignableStoreRole = z.infer<typeof AssignableStoreRole>;
+
+/** Un miembro del equipo de la tienda, con los datos visibles del usuario. */
+export const StoreMember = z.object({
+  userId: z.string(),
+  // name/email pueden faltar si la RLS oculta ese usuario (no comparte
+  // comunidad con quien consulta); el rol siempre se ve.
+  name: z.string().nullable(),
+  email: z.string().nullable(),
+  role: StoreRole,
+  createdAt: z.string(),
+});
+export type StoreMember = z.infer<typeof StoreMember>;
+
+/** Equipo completo de una tienda. */
+export const StoreMemberList = z.object({ members: z.array(StoreMember) });
+export type StoreMemberList = z.infer<typeof StoreMemberList>;
+
+/** Invitar a alguien al equipo por email (debe compartir una comunidad). */
+export const InviteStoreMemberInput = z.object({
+  email: z.string().email(),
+  role: AssignableStoreRole,
+});
+export type InviteStoreMemberInput = z.infer<typeof InviteStoreMemberInput>;
+
+/** Cambiar el rol de un miembro existente. */
+export const UpdateStoreMemberInput = z.object({ role: AssignableStoreRole });
+export type UpdateStoreMemberInput = z.infer<typeof UpdateStoreMemberInput>;

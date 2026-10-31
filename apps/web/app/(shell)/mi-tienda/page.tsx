@@ -1,3 +1,5 @@
+import { cn } from '@3b/ui';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getMe } from '../../../lib/me';
 import { getMyStores } from '../../../lib/stores';
@@ -23,19 +25,27 @@ export default async function MiTienda() {
       {stores.length > 0 ? (
         <ul className="grid gap-3">
           {stores.map((s) => (
-            <li key={s.id} className="glass rounded-lg p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-medium text-foreground">{s.name}</p>
-                  <p className="text-muted-foreground text-sm">
-                    {s.kind === 'products' ? 'Productos' : 'Servicios'} · /
-                    {s.slug}
-                  </p>
+            <li key={s.id}>
+              <Link
+                href={`/mi-tienda/${s.id}`}
+                className={cn(
+                  'glass block rounded-lg p-4 transition-colors',
+                  'hover:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                )}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-foreground">{s.name}</p>
+                    <p className="text-muted-foreground text-sm">
+                      {s.kind === 'products' ? 'Productos' : 'Servicios'} · /
+                      {s.slug}
+                    </p>
+                  </div>
+                  <span className="text-muted-foreground text-xs">
+                    {s.status}
+                  </span>
                 </div>
-                <span className="text-muted-foreground text-xs">
-                  {s.status}
-                </span>
-              </div>
+              </Link>
             </li>
           ))}
         </ul>
