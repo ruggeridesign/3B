@@ -19,6 +19,9 @@ AGENTS.md
 .cache
 .turbo
 
+# Subidas locales de media (storage de dev; en prod va a R2)
+.media-uploads/
+
 # Logs
 *.log
 npm-debug.log*

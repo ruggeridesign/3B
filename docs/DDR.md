@@ -41,9 +41,10 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización).
 - **En curso:** **M2 · Tienda + Catálogo + núcleo de media**, por rebanadas
   verticales siguiendo `data-model.md §7`. **Store rebanadas 1 (alta + "mis
-  tiendas")**, **2 (equipo/roles)** y **3 (métodos de pago) HECHAS**; siguiente:
-  verificación (KYC) — requiere el núcleo de `media` primero—, o avanzar a
-  `catalog`/`media`.
+  tiendas")**, **2 (equipo/roles)**, **3 (métodos de pago)** y **núcleo de
+  `media` (backend) HECHAS**; siguiente: wirear un consumidor de media (logo de
+  tienda, con columna en `stores`), o `catalog`, o KYC (ya desbloqueado por media,
+  falta el flujo de revisión).
 - **Entorno:** DB en Docker, puerto **5433** (el 5432 es un Postgres nativo).
   `pnpm check` debe quedar verde; `pnpm test:integration` corre RLS/RBAC contra
   DB real. CI en GitHub Actions valida ambos en cada push/PR a `main`.
@@ -52,7 +53,61 @@
 
 ---
 
-## 2026-10-31 · _(este commit)_ · feat — M2 store rebanada 3: métodos de pago (cifrados)
+## 2026-10-31 · _(este commit)_ · feat — M2 media (núcleo): subida con URL firmada + storage local
+
+- **Qué:** módulo transversal `media`. Tabla `media.media` (polimórfica por
+  `owner_type`/`owner_id`) + subida en **dos fases**: `POST /v1/media` crea la fila
+  `pending` y devuelve una **URL de subida firmada**; el cliente sube el archivo
+  directo al storage; `POST /v1/media/{id}/complete` la marca `ready`. También
+  `GET /v1/media?ownerType=&ownerId=` y `DELETE /v1/media/{id}`. Storage de **dev
+  local** (disco + token HMAC) con las rutas `PUT /media-local/upload/:token` y
+  `GET /media-local/file/:key`, montadas **fuera de `/v1`**. Sin cara web todavía
+  (núcleo backend; el primer consumidor —logo de tienda— es la próxima rebanada).
+- **Por qué:** pieza transversal de M2 que desbloquea imágenes de ítems/tiendas y
+  el documento de KYC. Se eligió antes que catalog/KYC por ser el cuello de botella
+  común.
+- **Impacto / archivos:** `packages/contracts/src/media.ts`
+  (`MediaOwnerType`/`MediaStatus`/`MediaMime`/`Media(+List)`/`CreateMediaInput`/
+  `UploadTarget`/`CreateMediaResponse`); `packages/db/src/schema/media.ts`
+  (`mediaFiles`) + migración `0007_fresh_franklin_richards.sql` (schema `media` +
+  tabla **+ RLS + grants anexados**); `packages/core/src/modules/media/**`
+  (`storage.ts` interfaz + helpers MIME↔ext, `infra/media-repo.ts` SQL crudo,
+  `http/routes.ts` router, `index.ts`) + `exports` de `@3b/core`;
+  `apps/api/src/local-media.ts` (storage local + router de disco) y wiring en
+  `apps/api/src/index.ts`; `packages/config/src/env.ts`
+  (`MEDIA_LOCAL_DIR`/`MEDIA_SIGN_SECRET`/`MEDIA_PUBLIC_URL`); `.gitignore`
+  (`.media-uploads/`); `packages/core/test/integration/media.test.ts`.
+- **Decisiones de diseño:**
+  - **Subida directa firmada (dos fases)** espejando R2: el archivo no pasa por la
+    capa de dominio. En dev, la "firma" es un token HMAC `{key, mime, exp}` que
+    valida la ruta local; en prod se reemplaza por un presigned PUT de R2.
+  - **`MediaStorage` como interfaz en core, implementación inyectada desde
+    `apps/api`** (igual que `paymentsEncKey`): core no toca `fs`/`crypto`/nube.
+  - **RLS por `created_by`** (quien sube gestiona su media); la autorización por
+    entidad dueña (`canManageStore` para `store`, o `ownerId == usuario` para
+    `user`) la agrega el handler. El **archivo** se sirve por su URL de storage,
+    no por la tabla. _Limitación conocida_: el listado por owner solo muestra la
+    media propia; la visibilidad para todo el equipo/compradores es una política
+    posterior por consumidor.
+  - **La `key` la genera la base** (`owner/owner_id/uuid.ext`) y `created_by` sale
+    de `authz.current_user_id()`, nunca del cliente. Rutas de archivo **fuera de
+    `/v1`** (sin sesión): la subida se autentica por el token; la lectura es pública
+    (bucket de dev), con guardas anti-traversal.
+  - **Procesamiento de imágenes diferido** (resize/variantes): necesita el worker
+    (M3); `sizes` queda vacío.
+- **Verificación:** `pnpm check` verde (boundaries 202 módulos); integración db 6/6
+  + **core 24/24** (+3 de media: crear pending→ready con key generada, RLS que
+  oculta la media de otro usuario, borrar); smoke HTTP 14/14 (dos fases completas:
+  crear→PUT firmado→servir con bytes round-trip→confirmar→listar→borrar + token
+  inválido + gating 403).
+- **Estado para retomar:** próximo: **consumidor de media** (logo de tienda →
+  columna `stores.logo_media_id` + uploader web), o `catalog`, o **KYC** (ya puede
+  usar media para el documento; falta el flujo de revisión por admin de comunidad).
+  Pendientes de media: procesamiento (M3) y visibilidad owner-wide/compradores.
+- **Relacionado:** [data-model §media y §7](architecture/data-model.md), ADR-001,
+  entradas de store 1–3.
+
+## 2026-10-31 · `05d5785` · feat — M2 store rebanada 3: métodos de pago (cifrados)
 
 - **Qué:** una tienda carga sus medios de cobro (pago móvil, transferencia,
   Zelle, Binance, efectivo, otro). Tabla nueva `store.payment_methods` con los

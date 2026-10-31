@@ -9,6 +9,16 @@ export {
   StoreRole,
 } from './identity';
 export {
+  CreateMediaInput,
+  CreateMediaResponse,
+  Media,
+  MediaList,
+  MediaMime,
+  MediaOwnerType,
+  MediaStatus,
+  UploadTarget,
+} from './media';
+export {
   AssignableStoreRole,
   CreatePaymentMethodInput,
   CreateStoreInput,

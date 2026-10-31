@@ -3,12 +3,14 @@ import { loadEnv } from '@3b/config';
 import { type ApiVariables, dbErrorResponse } from '@3b/core/http';
 import { adminRouter, IMPERSONATE_COOKIE } from '@3b/core/modules/admin';
 import { meRouter, readIsPlatformAdmin } from '@3b/core/modules/identity';
+import { mediaRouter } from '@3b/core/modules/media';
 import { storeRouter } from '@3b/core/modules/store';
 import { systemRouter } from '@3b/core/modules/system';
 import { createAppDb, sql, withAppContext } from '@3b/db';
 import { serve } from '@hono/node-server';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { getCookie } from 'hono/cookie';
+import { createLocalMediaStorage, localMediaRouter } from './local-media';
 
 const env = loadEnv();
 // Conexión con el rol `app` (mínimo privilegio, sujeto a RLS) para el runtime.
@@ -16,10 +18,28 @@ const appDb = createAppDb(env.APP_DATABASE_URL);
 
 const app = new OpenAPIHono<{ Variables: ApiVariables }>();
 
+// Storage de media: en dev es local (disco + URLs firmadas). En prod, R2.
+const mediaStorage = createLocalMediaStorage({
+  dir: env.MEDIA_LOCAL_DIR,
+  secret: env.MEDIA_SIGN_SECRET,
+  publicUrl: env.MEDIA_PUBLIC_URL,
+});
+
 app.get('/', (c) => c.json({ name: '3b-api', ok: true }));
 
 // Better Auth: resuelve /api/auth/** (registro, login, sesión, OAuth…).
 app.on(['GET', 'POST'], '/api/auth/*', (c) => auth.handler(c.req.raw));
+
+// Rutas de archivos locales (storage de dev). FUERA de /v1: la subida se
+// autentica por el token firmado y la lectura es pública.
+app.route(
+  '/media-local',
+  localMediaRouter({
+    dir: env.MEDIA_LOCAL_DIR,
+    secret: env.MEDIA_SIGN_SECRET,
+    publicUrl: env.MEDIA_PUBLIC_URL,
+  }),
+);
 
 // Middleware de auth/contexto para /v1/**: lee la sesión (servidor), abre una
 // transacción con contexto RLS y resuelve la capacidad global de plataforma.
@@ -68,6 +88,7 @@ app.route('/v1', systemRouter());
 app.route('/v1', meRouter());
 app.route('/v1', adminRouter());
 app.route('/v1', storeRouter({ paymentsEncKey: env.PAYMENTS_ENC_KEY }));
+app.route('/v1', mediaRouter({ storage: mediaStorage }));
 
 // Documento OpenAPI (contrato de la API).
 app.doc('/openapi.json', {

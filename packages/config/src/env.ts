@@ -38,6 +38,16 @@ const envSchema = z.object({
     .string()
     .min(16)
     .default('dev-only-payments-key-change-me-0123456789'),
+
+  // Media (storage de archivos). En dev el storage es local (disco); en prod
+  // será R2. `MEDIA_LOCAL_DIR` es la carpeta en disco; `MEDIA_SIGN_SECRET` firma
+  // (HMAC) las URLs de subida; `MEDIA_PUBLIC_URL` es la base para servir/subir.
+  MEDIA_LOCAL_DIR: z.string().default('./.media-uploads'),
+  MEDIA_SIGN_SECRET: z
+    .string()
+    .min(16)
+    .default('dev-only-media-sign-secret-0123456789'),
+  MEDIA_PUBLIC_URL: z.string().url().default('http://localhost:8787'),
 });
 
 export type Env = z.infer<typeof envSchema>;
