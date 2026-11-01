@@ -1,11 +1,6 @@
 import type { AppTransaction } from '@3b/db';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
-import {
-  type ApiVariables,
-  canManageStore,
-  requireSession,
-  sessionCtx,
-} from '../../../http';
+import { type ApiVariables, requireSession, sessionCtx } from '../../../http';
 import {
   createPendingMedia,
   deleteMediaRecord,
@@ -15,7 +10,19 @@ import {
 } from '../infra/media-repo';
 import type { MediaStorage } from '../storage';
 
-const ownerType = z.enum(['store', 'user']);
+const ownerType = z.enum(['store', 'user', 'item']);
+
+/**
+ * Autoriza el uso de media de una entidad. Lo **inyecta `apps/api`** (que conoce
+ * todos los módulos) para que `media` no dependa de `store`/`catalog`: resuelve
+ * si el usuario puede subir/ver media de ese `ownerType`/`ownerId`.
+ */
+export type AuthorizeOwner = (
+  db: AppTransaction,
+  userId: string,
+  ownerType: 'store' | 'user' | 'item',
+  ownerId: string,
+) => Promise<boolean>;
 const mime = z.enum([
   'image/jpeg',
   'image/png',
@@ -75,27 +82,13 @@ const idParam = z.object({
 
 const errorSchema = z.object({ error: z.string() }).openapi('MediaError');
 
-/** Opciones del router de media: el storage concreto se inyecta desde la app. */
+/** Opciones del router de media: storage + autorización por entidad (inyectados). */
 export interface MediaRouterOptions {
   storage: MediaStorage;
+  authorizeOwner: AuthorizeOwner;
 }
 
-/**
- * ¿Puede el usuario usar/ver media de esa entidad? Para `store` debe poder
- * administrarla; para `user`, ser él mismo. La RLS de `media` (por `created_by`)
- * es el último candado; esto da un 403 temprano y claro.
- */
-function canUseOwner(
-  db: AppTransaction,
-  userId: string,
-  type: 'store' | 'user',
-  ownerId: string,
-): Promise<boolean> {
-  if (type === 'store') return canManageStore(db, ownerId);
-  return Promise.resolve(ownerId === userId);
-}
-
-export function mediaRouter({ storage }: MediaRouterOptions) {
+export function mediaRouter({ storage, authorizeOwner }: MediaRouterOptions) {
   const app = new OpenAPIHono<{ Variables: ApiVariables }>();
   app.use('*', requireSession);
 
@@ -137,7 +130,7 @@ export function mediaRouter({ storage }: MediaRouterOptions) {
     async (c) => {
       const { db, userId } = sessionCtx(c);
       const body = c.req.valid('json');
-      if (!(await canUseOwner(db, userId, body.ownerType, body.ownerId))) {
+      if (!(await authorizeOwner(db, userId, body.ownerType, body.ownerId))) {
         return c.json({ error: 'No podés subir media para esa entidad.' }, 403);
       }
       const media = await createPendingMedia(db, body);
@@ -172,7 +165,7 @@ export function mediaRouter({ storage }: MediaRouterOptions) {
     async (c) => {
       const { db, userId } = sessionCtx(c);
       const { ownerType: type, ownerId } = c.req.valid('query');
-      if (!(await canUseOwner(db, userId, type, ownerId))) {
+      if (!(await authorizeOwner(db, userId, type, ownerId))) {
         return c.json({ error: 'No podés ver media de esa entidad.' }, 403);
       }
       const rows = await listMediaByOwner(db, type, ownerId);

@@ -1,4 +1,9 @@
-import type { AttributeDefinition, Category } from '@3b/contracts';
+import type {
+  AttributeDefinition,
+  Category,
+  ItemVariant,
+  Media,
+} from '@3b/contracts';
 import { cookies } from 'next/headers';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787';
@@ -38,6 +43,43 @@ export async function getStoreAttributes(
     if (!res.ok) return [];
     const data = (await res.json()) as { attributes: AttributeDefinition[] };
     return data.attributes;
+  } catch {
+    return [];
+  }
+}
+
+/** Imágenes/archivos de un ítem (media con owner_type=item). */
+export async function getItemMedia(itemId: string): Promise<Media[]> {
+  const cookie = await cookieHeader();
+  if (!cookie) return [];
+  try {
+    const res = await fetch(
+      `${API}/v1/media?ownerType=item&ownerId=${itemId}`,
+      { headers: { cookie }, cache: 'no-store' },
+    );
+    if (!res.ok) return [];
+    const data = (await res.json()) as { media: Media[] };
+    return data.media;
+  } catch {
+    return [];
+  }
+}
+
+/** Variantes de un ítem. */
+export async function getItemVariants(
+  storeId: string,
+  itemId: string,
+): Promise<ItemVariant[]> {
+  const cookie = await cookieHeader();
+  if (!cookie) return [];
+  try {
+    const res = await fetch(
+      `${API}/v1/stores/${storeId}/items/${itemId}/variants`,
+      { headers: { cookie }, cache: 'no-store' },
+    );
+    if (!res.ok) return [];
+    const data = (await res.json()) as { variants: ItemVariant[] };
+    return data.variants;
   } catch {
     return [];
   }

@@ -44,9 +44,13 @@
   (equipo/roles)**, **3 (métodos de pago)**, **núcleo de `media` (backend)**,
   **catalog 1 (ítems)**, **2a (categorías)**, **2b (atributos: definiciones +
   herencia)**, **2c (valores de atributo en ítems)** y **2d (variantes)**. Catalog
-  queda con su núcleo completo (taxonomía, atributos, ítems con valores, variantes).
-  Siguiente: wirear **imágenes** (media) a ítems/tiendas; o **KYC**; o avanzar a
-  **M3 (inventario)** / **M4 (descubrimiento)**.
+  queda con su núcleo completo (taxonomía, atributos, ítems con valores, variantes)
+  **+ página de detalle de ítem con imágenes (media) y editor de variantes**.
+  Trabajo autónomo en curso contra el mapa de datos de `.docs`
+  (`3B_diccionario_de_objetos.md`, 62 entidades/14 dominios): se avanza fase por
+  fase creando todos los objetos. Diseño visual: **se difiere** (habrá un skill de
+  UI). Siguiente: `service_details`/`store_hours`/`collections`, **KYC**, y **M3
+  inventario** / **M4 descubrimiento** / **M5 pedidos**.
 - **Localhost demo:** `pnpm db:up` + `pnpm --filter @3b/api dev` (8787) +
   `pnpm --filter @3b/web dev` (3000). Usuarios seed, password `Password123!`
   (carlos@3b.test = Seller con 2 tiendas e ítems; admin@3b.test = superadmin +
@@ -60,7 +64,48 @@
 
 ---
 
-## 2026-11-01 · _(este commit)_ · feat — M2 catalog rebanada 2d: variantes de ítem
+## 2026-11-01 · _(este commit)_ · feat — M2 página de detalle de ítem + imágenes + editor de variantes
+
+- **Qué:** página web `/mi-tienda/[id]/items/[itemId]` que reúne **imágenes del
+  ítem** (subida directa en dos fases reusando `media` con `owner_type='item'`),
+  **editor de variantes** (alta/baja con ejes desde los atributos `variant_axis`) y
+  los atributos del ítem. Cierra la "web diferida" de media (núcleo) y de variantes
+  (2d). Cada ítem del catálogo enlaza a su detalle.
+- **Por qué:** era el eslabón que faltaba para operar un ítem completo desde la UI
+  (fotos + SKUs), y da la base de página de detalle para lo que viene.
+- **Impacto / archivos:** `packages/contracts/src/media.ts` (`MediaOwnerType` suma
+  `item`); `packages/core/src/modules/media/http/routes.ts` (la autorización por
+  entidad ahora es **inyectada**, `AuthorizeOwner`, para no acoplar media→store/
+  catalog); `packages/core/src/modules/catalog` (`getItemStore`);
+  `apps/api/src/index.ts` (implementa `authorizeOwner`: store→canManageStore,
+  user→self, item→canManageCatalog de la tienda del ítem; **CORS** en `/media-local`
+  para el PUT cross-origin del browser); `apps/web` (`lib/catalog` getItemMedia/
+  getItemVariants, componentes `item-media`/`item-variants`, página de detalle,
+  enlace desde el catálogo).
+- **Decisiones de diseño:**
+  - **Imágenes = `media` con `owner_type='item'`** (sin tabla `item_media` por
+    ahora): se reusa todo el flujo de media (crear→PUT firmado→confirmar→listar).
+    Orden por `created_at`; galería ordenada / imagen principal (`item_media`
+    PROPUESTO) quedan para después.
+  - **Autorización de media inyectada** (`AuthorizeOwner`): el módulo `media`
+    (transversal) no debe depender de `store`/`catalog`; `apps/api` (que conoce
+    todos los módulos) resuelve el permiso por `ownerType`. Para `item` resuelve la
+    tienda del ítem (`getItemStore`) y exige `canManageCatalog`.
+  - **CORS en `/media-local`:** el browser (web :3000) sube directo al storage de la
+    API (:8787); se habilita CORS (origin = `WEB_URL`, métodos GET/PUT/OPTIONS) solo
+    para esas rutas. El resto sigue por el proxy same-origin de Next.
+  - **Diseño visual diferido** por indicación del usuario: se crean los objetos
+    funcionales aunque la UI luzca tosca; habrá un skill de diseño de UI aparte.
+- **Verificación:** `pnpm check` verde (boundaries 261); integración db 6/6 +
+  core 40/40 (sin cambios de repo); smoke HTTP 7/7 (subida de imagen de ítem de
+  punta a punta + gating `item` 403 a un no-manager).
+- **Estado para retomar:** seguir con el mapa de `.docs`: `service_details`,
+  `store_hours`, `collections`; **KYC**; **M3 inventario** (`stock_levels`,
+  `stock_movements`, `reservations`); **M4 descubrimiento**; **M5 pedidos/pagos**.
+- **Relacionado:** [diccionario de objetos](../.docs/3B_diccionario_de_objetos.md)
+  (local), [data-model](architecture/data-model.md), entradas de media y catalog.
+
+## 2026-11-01 · `017481b` · feat — M2 catalog rebanada 2d: variantes de ítem
 
 - **Qué:** **variantes** de ítem (`catalog.item_variants`): combinaciones de ejes
   (color/talle…) con SKU único por ítem, barcode, precio opcional y `track_stock`

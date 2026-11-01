@@ -1,16 +1,22 @@
 import { auth } from '@3b/auth';
 import { loadEnv } from '@3b/config';
-import { type ApiVariables, dbErrorResponse } from '@3b/core/http';
+import {
+  type ApiVariables,
+  canManageCatalog,
+  canManageStore,
+  dbErrorResponse,
+} from '@3b/core/http';
 import { adminRouter, IMPERSONATE_COOKIE } from '@3b/core/modules/admin';
-import { catalogRouter } from '@3b/core/modules/catalog';
+import { catalogRouter, getItemStore } from '@3b/core/modules/catalog';
 import { meRouter, readIsPlatformAdmin } from '@3b/core/modules/identity';
-import { mediaRouter } from '@3b/core/modules/media';
+import { type AuthorizeOwner, mediaRouter } from '@3b/core/modules/media';
 import { storeRouter } from '@3b/core/modules/store';
 import { systemRouter } from '@3b/core/modules/system';
 import { createAppDb, sql, withAppContext } from '@3b/db';
 import { serve } from '@hono/node-server';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { getCookie } from 'hono/cookie';
+import { cors } from 'hono/cors';
 import { createLocalMediaStorage, localMediaRouter } from './local-media';
 
 const env = loadEnv();
@@ -26,13 +32,28 @@ const mediaStorage = createLocalMediaStorage({
   publicUrl: env.MEDIA_PUBLIC_URL,
 });
 
+// Autorización de media por entidad (inyectada en el router de media para no
+// acoplar media→store/catalog): tienda = poder administrarla; usuario = uno mismo;
+// ítem = poder gestionar el catálogo de la tienda dueña del ítem.
+const authorizeOwner: AuthorizeOwner = async (db, userId, type, ownerId) => {
+  if (type === 'store') return canManageStore(db, ownerId);
+  if (type === 'user') return ownerId === userId;
+  const storeId = await getItemStore(db, ownerId);
+  return storeId ? canManageCatalog(db, storeId) : false;
+};
+
 app.get('/', (c) => c.json({ name: '3b-api', ok: true }));
 
 // Better Auth: resuelve /api/auth/** (registro, login, sesión, OAuth…).
 app.on(['GET', 'POST'], '/api/auth/*', (c) => auth.handler(c.req.raw));
 
 // Rutas de archivos locales (storage de dev). FUERA de /v1: la subida se
-// autentica por el token firmado y la lectura es pública.
+// autentica por el token firmado y la lectura es pública. Como la web (3000)
+// sube directo acá (8787), habilitamos CORS para el PUT cross-origin.
+app.use(
+  '/media-local/*',
+  cors({ origin: env.WEB_URL, allowMethods: ['GET', 'PUT', 'OPTIONS'] }),
+);
 app.route(
   '/media-local',
   localMediaRouter({
@@ -89,7 +110,7 @@ app.route('/v1', systemRouter());
 app.route('/v1', meRouter());
 app.route('/v1', adminRouter());
 app.route('/v1', storeRouter({ paymentsEncKey: env.PAYMENTS_ENC_KEY }));
-app.route('/v1', mediaRouter({ storage: mediaStorage }));
+app.route('/v1', mediaRouter({ storage: mediaStorage, authorizeOwner }));
 app.route('/v1', catalogRouter());
 
 // Documento OpenAPI (contrato de la API).

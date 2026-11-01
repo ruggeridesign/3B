@@ -9,6 +9,7 @@ import type {
   PriceMode,
 } from '@3b/contracts';
 import { Button, cn, Input, Label } from '@3b/ui';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useState } from 'react';
 
@@ -97,7 +98,12 @@ export function StoreCatalog({
             >
               <div className="min-w-0">
                 <p className="font-medium text-foreground">
-                  {it.title}
+                  <Link
+                    href={`/mi-tienda/${storeId}/items/${it.id}`}
+                    className="hover:underline"
+                  >
+                    {it.title}
+                  </Link>
                   <span className="ml-2 text-muted-foreground text-xs">
                     {STATUS_LABEL[it.status]}
                   </span>

@@ -1,6 +1,10 @@
 // API pública del módulo media.
 
-export { type MediaRouterOptions, mediaRouter } from './http/routes';
+export {
+  type AuthorizeOwner,
+  type MediaRouterOptions,
+  mediaRouter,
+} from './http/routes';
 export {
   createPendingMedia,
   deleteMediaRecord,

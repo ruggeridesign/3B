@@ -12,7 +12,7 @@ import { Uuid } from './store';
  * A qué entidad pertenece el archivo (polimórfico). Se extiende a medida que
  * aparecen consumidores (item, kyc, message…). Hoy: tienda o usuario.
  */
-export const MediaOwnerType = z.enum(['store', 'user']);
+export const MediaOwnerType = z.enum(['store', 'user', 'item']);
 export type MediaOwnerType = z.infer<typeof MediaOwnerType>;
 
 /** Estado del ciclo de vida de subida. */

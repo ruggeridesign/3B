@@ -17,6 +17,7 @@ export {
   createItem,
   deleteItem,
   getItem,
+  getItemStore,
   listItemsByStore,
   updateItem,
 } from './infra/item-repo';

@@ -42,6 +42,19 @@ export async function getItem(
   return row ? toItem(row) : null;
 }
 
+/** Tienda dueña de un ítem (o null si no existe / la RLS lo oculta). */
+export async function getItemStore(
+  db: AppTransaction,
+  itemId: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ storeId: schema.items.storeId })
+    .from(schema.items)
+    .where(eq(schema.items.id, itemId))
+    .limit(1);
+  return row?.storeId ?? null;
+}
+
 /** Ítems de una tienda (la RLS acota: miembros ven todo; afuera, publicados). */
 export async function listItemsByStore(
   db: AppTransaction,
