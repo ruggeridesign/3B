@@ -40,11 +40,18 @@ export {
 export {
   Capabilities,
   CommunityRole,
+  CreateKycSubmissionInput,
   Impersonation,
+  KycDocType,
+  KycStatus,
+  KycSubjectType,
+  KycSubmission,
+  KycSubmissionList,
   MeCommunity,
   MembershipStatus,
   MeResponse,
   MeStore,
+  ReviewKycInput,
   StoreRole,
 } from './identity';
 export {
@@ -77,6 +84,7 @@ export {
   StoreMemberList,
   StoreSlug,
   StoreStatus,
+  StoreVerificationLevel,
   UpdatePaymentMethodInput,
   UpdateStoreMemberInput,
   Uuid,

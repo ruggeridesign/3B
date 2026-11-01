@@ -29,6 +29,8 @@ export const stores = store.table(
     slug: text('slug').notNull(),
     name: text('name').notNull(),
     status: text('status').notNull().default('active'),
+    // Nivel de verificación (KYC). Lo fija el trigger al aprobar una verificación.
+    verificationLevel: text('verification_level').notNull().default('none'), // none | verified
     ...timestamps,
   },
   (t) => [

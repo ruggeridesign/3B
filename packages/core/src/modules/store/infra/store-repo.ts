@@ -13,6 +13,7 @@ function toStore(row: StoreRow): Store {
     slug: row.slug,
     name: row.name,
     status: row.status as Store['status'],
+    verificationLevel: row.verificationLevel as Store['verificationLevel'],
     createdAt: row.createdAt.toISOString(),
   };
 }

@@ -4,6 +4,7 @@ import { type ApiVariables, requireSession, sessionCtx } from '../../../http';
 import {
   createPendingMedia,
   deleteMediaRecord,
+  getMediaById,
   listMediaByOwner,
   type MediaRecord,
   markMediaReady,
@@ -170,6 +171,39 @@ export function mediaRouter({ storage, authorizeOwner }: MediaRouterOptions) {
       }
       const rows = await listMediaByOwner(db, type, ownerId);
       return c.json({ media: rows.map(toDto) }, 200);
+    },
+  );
+
+  // Una media por id. La RLS acota la visibilidad (el dueño que la subió, el
+  // admin de plataforma, o quien pueda ver una verificación KYC que la referencie).
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/media/{id}',
+      tags: ['media'],
+      summary: 'Una media por id',
+      request: { params: idParam },
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: mediaOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'No existe (o no podés verla)',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      const media = await getMediaById(db, id);
+      if (!media) return c.json({ error: 'No existe esa media.' }, 404);
+      return c.json(toDto(media), 200);
     },
   );
 

@@ -387,20 +387,48 @@ async function main() {
     ])
     .onConflictDoNothing();
 
+  // Verificaciones (KYC). La ferretería ya está aprobada (el trigger la deja
+  // `verified`), revisada por Ana (admin de Coro); la peluquería queda pendiente
+  // en la cola. Documento (media) opcional: null en el seed.
+  await db
+    .insert(schema.kycSubmissions)
+    .values([
+      {
+        id: '88888888-8888-8888-8888-888888888801',
+        subjectType: 'store',
+        subjectId: S_FERRETERIA,
+        docType: 'rif',
+        status: 'approved',
+        reviewerId: U_ANA,
+        reviewNotes: 'Documentación en regla.',
+        reviewedAt: new Date('2026-10-31T12:00:00Z'),
+      },
+      {
+        id: '88888888-8888-8888-8888-888888888802',
+        subjectType: 'store',
+        subjectId: S_PELUQUERIA,
+        docType: 'rif',
+        status: 'pending',
+      },
+    ])
+    .onConflictDoNothing();
+
   // Resumen
-  const [[c], [u], [s], [m], [i], [v], [sd], [h], [col]] = await Promise.all([
-    sql`select count(*)::int as n from community.communities`,
-    sql`select count(*)::int as n from identity.users`,
-    sql`select count(*)::int as n from store.stores`,
-    sql`select count(*)::int as n from community.memberships`,
-    sql`select count(*)::int as n from catalog.items`,
-    sql`select count(*)::int as n from catalog.item_variants`,
-    sql`select count(*)::int as n from catalog.service_details`,
-    sql`select count(*)::int as n from store.store_hours`,
-    sql`select count(*)::int as n from catalog.collections`,
-  ]);
+  const [[c], [u], [s], [m], [i], [v], [sd], [h], [col], [k]] =
+    await Promise.all([
+      sql`select count(*)::int as n from community.communities`,
+      sql`select count(*)::int as n from identity.users`,
+      sql`select count(*)::int as n from store.stores`,
+      sql`select count(*)::int as n from community.memberships`,
+      sql`select count(*)::int as n from catalog.items`,
+      sql`select count(*)::int as n from catalog.item_variants`,
+      sql`select count(*)::int as n from catalog.service_details`,
+      sql`select count(*)::int as n from store.store_hours`,
+      sql`select count(*)::int as n from catalog.collections`,
+      sql`select count(*)::int as n from identity.kyc_submissions`,
+    ]);
   console.log(
-    `[seed] comunidades=${c.n} usuarios=${u.n} tiendas=${s.n} membresías=${m.n} ítems=${i.n} variantes=${v.n} servicios=${sd.n} horarios=${h.n} colecciones=${col.n}`,
+    `[seed] comunidades=${c.n} usuarios=${u.n} tiendas=${s.n} membresías=${m.n} ítems=${i.n} variantes=${v.n} servicios=${sd.n} horarios=${h.n} colecciones=${col.n} kyc=${k.n}`,
   );
 
   await sql.end();

@@ -77,3 +77,59 @@ export const MeResponse = z.object({
   impersonating: Impersonation.nullable(),
 });
 export type MeResponse = z.infer<typeof MeResponse>;
+
+// ===== Verificación (KYC) =====
+
+/** A qué sujeto pertenece la verificación (polimórfico). M2 usa `store`. */
+export const KycSubjectType = z.enum(['store', 'mover']);
+export type KycSubjectType = z.infer<typeof KycSubjectType>;
+
+/** Tipo de documento presentado (contexto Venezuela). */
+export const KycDocType = z.enum(['rif', 'cedula', 'pasaporte', 'other']);
+export type KycDocType = z.infer<typeof KycDocType>;
+
+/** Estado de una verificación: nace `pending`, el revisor decide. */
+export const KycStatus = z.enum(['pending', 'approved', 'rejected']);
+export type KycStatus = z.infer<typeof KycStatus>;
+
+/** Una verificación KYC (datos y archivos sensibles). */
+export const KycSubmission = z.object({
+  id: z.string(),
+  subjectType: KycSubjectType,
+  subjectId: z.string(),
+  docType: KycDocType,
+  // Documento subido (media, polimórfica). Puede faltar hasta adjuntarlo.
+  mediaId: z.string().nullable(),
+  status: KycStatus,
+  reviewerId: z.string().nullable(),
+  reviewNotes: z.string().nullable(),
+  expiresAt: z.string().nullable(),
+  reviewedAt: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type KycSubmission = z.infer<typeof KycSubmission>;
+
+/** Lista de verificaciones (p. ej. las de una tienda o la cola de una comunidad). */
+export const KycSubmissionList = z.object({
+  submissions: z.array(KycSubmission),
+});
+export type KycSubmissionList = z.infer<typeof KycSubmissionList>;
+
+/** Alta de una verificación. El sujeto sale de la ruta; el estado nace `pending`. */
+export const CreateKycSubmissionInput = z.object({
+  docType: KycDocType,
+  mediaId: z
+    .string()
+    .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+    .nullable()
+    .optional(),
+  expiresAt: z.string().datetime().nullable().optional(),
+});
+export type CreateKycSubmissionInput = z.infer<typeof CreateKycSubmissionInput>;
+
+/** Decisión del revisor (admin de la comunidad del sujeto). */
+export const ReviewKycInput = z.object({
+  decision: z.enum(['approve', 'reject']),
+  notes: z.string().max(2000).nullable().optional(),
+});
+export type ReviewKycInput = z.infer<typeof ReviewKycInput>;

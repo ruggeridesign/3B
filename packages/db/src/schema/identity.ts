@@ -1,4 +1,11 @@
-import { boolean, pgSchema, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  pgSchema,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { timestamps } from './_shared';
 
 // Esquema `identity`: una identidad global por usuario.
@@ -31,6 +38,36 @@ export const moverProfiles = identity.table('mover_profiles', {
   status: text('status').notNull().default('pending'), // pending | approved | suspended
   ...timestamps,
 });
+
+/**
+ * Verificación KYC (datos y archivos sensibles). Polimórfica por
+ * `subject_type`/`subject_id` (M2 usa `store`). El documento es una media
+ * (`media_id`, FK blanda agregada en la migración para no acoplar los esquemas).
+ * La RLS y el trigger que fija `stores.verification_level` al aprobar viven en la
+ * migración.
+ */
+export const kycSubmissions = identity.table(
+  'kyc_submissions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    subjectType: text('subject_type').notNull(), // store | mover
+    subjectId: uuid('subject_id').notNull(),
+    docType: text('doc_type').notNull(), // rif | cedula | pasaporte | other
+    mediaId: uuid('media_id'), // FK a media.media (ON DELETE SET NULL, en migración)
+    status: text('status').notNull().default('pending'), // pending | approved | rejected
+    reviewerId: uuid('reviewer_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    reviewNotes: text('review_notes'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    index('kyc_subject_idx').on(t.subjectType, t.subjectId),
+    index('kyc_status_idx').on(t.status),
+  ],
+);
 
 // ── Tablas de Better Auth (mapeadas sobre identity.users; sin duplicar) ──
 // Las gestiona SOLO Better Auth con la conexión owner (bypassa RLS); el rol

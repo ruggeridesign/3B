@@ -34,6 +34,8 @@ import {
 const kind = z.enum(['products', 'services']);
 const status = z.enum(['active', 'suspended']);
 
+const verificationLevel = z.enum(['none', 'verified']);
+
 const storeOut = z
   .object({
     id: z.string(),
@@ -43,6 +45,7 @@ const storeOut = z
     slug: z.string(),
     name: z.string(),
     status,
+    verificationLevel,
     createdAt: z.string(),
   })
   .openapi('Store');

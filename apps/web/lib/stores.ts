@@ -1,5 +1,6 @@
 import type {
   Item,
+  KycSubmission,
   PaymentMethod,
   Store,
   StoreHour,
@@ -96,6 +97,23 @@ export async function getStoreHours(id: string): Promise<StoreHour[]> {
     if (!res.ok) return [];
     const data = (await res.json()) as { hours: StoreHour[] };
     return data.hours;
+  } catch {
+    return [];
+  }
+}
+
+/** Verificaciones (KYC) de una tienda. [] si no sos manager o falla. */
+export async function getStoreKyc(id: string): Promise<KycSubmission[]> {
+  const cookie = await cookieHeader();
+  if (!cookie) return [];
+  try {
+    const res = await fetch(`${API}/v1/stores/${id}/kyc`, {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { submissions: KycSubmission[] };
+    return data.submissions;
   } catch {
     return [];
   }

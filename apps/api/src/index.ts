@@ -8,7 +8,11 @@ import {
 } from '@3b/core/http';
 import { adminRouter, IMPERSONATE_COOKIE } from '@3b/core/modules/admin';
 import { catalogRouter, getItemStore } from '@3b/core/modules/catalog';
-import { meRouter, readIsPlatformAdmin } from '@3b/core/modules/identity';
+import {
+  kycRouter,
+  meRouter,
+  readIsPlatformAdmin,
+} from '@3b/core/modules/identity';
 import { type AuthorizeOwner, mediaRouter } from '@3b/core/modules/media';
 import { storeRouter } from '@3b/core/modules/store';
 import { systemRouter } from '@3b/core/modules/system';
@@ -108,6 +112,7 @@ app.use('/v1/*', async (c, next) => {
 // Routers http de los módulos de core bajo /v1.
 app.route('/v1', systemRouter());
 app.route('/v1', meRouter());
+app.route('/v1', kycRouter());
 app.route('/v1', adminRouter());
 app.route('/v1', storeRouter({ paymentsEncKey: env.PAYMENTS_ENC_KEY }));
 app.route('/v1', mediaRouter({ storage: mediaStorage, authorizeOwner }));

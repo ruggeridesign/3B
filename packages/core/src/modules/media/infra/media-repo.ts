@@ -92,6 +92,17 @@ export async function listMediaByOwner(
   return rows.map(toRecord);
 }
 
+/** Una media por id (acotada por la RLS a lo que el usuario puede ver). */
+export async function getMediaById(
+  db: AppTransaction,
+  id: string,
+): Promise<MediaRecord | null> {
+  const rows = (await db.execute(sql`
+    SELECT ${COLS} FROM media.media WHERE id = ${id} LIMIT 1
+  `)) as unknown as Row[];
+  return rows[0] ? toRecord(rows[0]) : null;
+}
+
 /** Borra una media por id. Devuelve el registro borrado (para limpiar el objeto). */
 export async function deleteMediaRecord(
   db: AppTransaction,

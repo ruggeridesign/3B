@@ -15,6 +15,10 @@ export type StoreKind = z.infer<typeof StoreKind>;
 export const StoreStatus = z.enum(['active', 'suspended']);
 export type StoreStatus = z.infer<typeof StoreStatus>;
 
+/** Nivel de verificación (KYC) de la tienda: lo fija el trigger al aprobar. */
+export const StoreVerificationLevel = z.enum(['none', 'verified']);
+export type StoreVerificationLevel = z.infer<typeof StoreVerificationLevel>;
+
 /** Slug de tienda: minúsculas, alfanumérico con guiones; único por comunidad. */
 export const StoreSlug = z
   .string()
@@ -55,6 +59,7 @@ export const Store = z.object({
   slug: z.string(),
   name: z.string(),
   status: StoreStatus,
+  verificationLevel: StoreVerificationLevel,
   createdAt: z.string(),
 });
 export type Store = z.infer<typeof Store>;

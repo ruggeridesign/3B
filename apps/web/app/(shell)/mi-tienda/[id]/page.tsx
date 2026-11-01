@@ -12,12 +12,14 @@ import {
   getStore,
   getStoreHours,
   getStoreItems,
+  getStoreKyc,
   getStoreMembers,
 } from '../../../../lib/stores';
 import { StoreAttributes } from '../../../_components/store-attributes';
 import { StoreCatalog } from '../../../_components/store-catalog';
 import { StoreCollections } from '../../../_components/store-collections';
 import { StoreHours } from '../../../_components/store-hours';
+import { StoreKyc } from '../../../_components/store-kyc';
 import { StorePayments } from '../../../_components/store-payments';
 import { StoreTeam } from '../../../_components/store-team';
 
@@ -62,6 +64,7 @@ export default async function StoreDetail({
     ownAttrs,
     resolvedAttrs,
     collections,
+    kyc,
   ] = await Promise.all([
     getStoreMembers(id),
     getPaymentMethods(id),
@@ -71,6 +74,7 @@ export default async function StoreDetail({
     canManageCatalog ? getStoreAttributes(id) : Promise.resolve([]),
     canManageCatalog ? getResolvedAttributes(id) : Promise.resolve([]),
     getStoreCollections(id),
+    canManage ? getStoreKyc(id) : Promise.resolve([]),
   ]);
 
   return (
@@ -85,6 +89,13 @@ export default async function StoreDetail({
           {store.slug}
         </p>
       </div>
+
+      <StoreKyc
+        storeId={store.id}
+        verificationLevel={store.verificationLevel}
+        submissions={kyc}
+        canManage={canManage}
+      />
 
       <StoreTeam
         storeId={store.id}

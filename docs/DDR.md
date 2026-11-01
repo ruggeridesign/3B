@@ -41,21 +41,21 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización).
 - **En curso:** **M2 · Tienda + Catálogo + núcleo de media**, por rebanadas
   verticales siguiendo `data-model.md §7`. HECHAS: **store 1 (alta)**, **2
-  (equipo/roles)**, **3 (métodos de pago)**, **4 (horarios)**, **núcleo de `media`
-  (backend)**, **catalog 1 (ítems)**, **2a (categorías)**, **2b (atributos:
-  definiciones + herencia)**, **2c (valores de atributo en ítems)**, **2d
-  (variantes)**, **2e (detalle de servicio)** y **2f (colecciones/vitrina)**. Catalog
-  queda con su núcleo completo (taxonomía, atributos, ítems con valores, variantes,
-  detalle de servicio, colecciones) **+ página de detalle de ítem con imágenes
-  (media), editor de variantes y detalle de servicio**; store suma **horario
-  semanal** y la página de tienda suma **colecciones**. Trabajo autónomo en curso
-  contra el mapa de datos de `.docs` (`3B_diccionario_de_objetos.md`, 62
-  entidades/14 dominios): se avanza fase por fase creando todos los objetos. Diseño
-  visual: **se difiere** (habrá un skill de UI). Quedan del mapa M2: `templates`
-  (plantillas de atributos), `item_attr_index` (proyección de búsqueda, va con M4) y
-  los de Fase 2 (`changesets`). Siguiente sugerido: **KYC**
-  (`identity.kyc_submissions` + `stores.verification_level`), y luego **M3
-  inventario** / **M4 descubrimiento** / **M5 pedidos**.
+  (equipo/roles)**, **3 (métodos de pago)**, **4 (horarios)**, **5 (KYC/
+  verificación)**, **núcleo de `media` (backend)**, **catalog 1 (ítems)**, **2a
+  (categorías)**, **2b (atributos: definiciones + herencia)**, **2c (valores de
+  atributo en ítems)**, **2d (variantes)**, **2e (detalle de servicio)** y **2f
+  (colecciones/vitrina)**. Catalog queda con su núcleo completo (taxonomía,
+  atributos, ítems con valores, variantes, detalle de servicio, colecciones) **+
+  página de detalle de ítem**; store suma **horario semanal**, **colecciones** y
+  **verificación KYC** (con `stores.verification_level` + revisión por admin de
+  comunidad). Trabajo autónomo en curso contra el mapa de datos de `.docs`
+  (`3B_diccionario_de_objetos.md`, 62 entidades/14 dominios): se avanza fase por
+  fase creando todos los objetos. Diseño visual: **se difiere** (habrá un skill de
+  UI). Quedan del mapa M2: `templates` (plantillas de atributos), `item_attr_index`
+  (proyección de búsqueda, va con M4), KYC de **movers** (M6) y los de Fase 2
+  (`changesets`). Siguiente sugerido: **M3 inventario** (`stock_levels`/
+  `stock_movements`/`reservations` + worker/Valkey) o **M4 descubrimiento**.
 - **Localhost demo:** `pnpm db:up` + `pnpm --filter @3b/api dev` (8787) +
   `pnpm --filter @3b/web dev` (3000). Usuarios seed, password `Password123!`
   (carlos@3b.test = Seller con 2 tiendas e ítems; admin@3b.test = superadmin +
@@ -69,7 +69,75 @@
 
 ---
 
-## 2026-11-01 · _(este commit)_ · feat — M2 catalog rebanada 2f: colecciones (vitrina)
+## 2026-11-01 · _(este commit)_ · feat — M2 store rebanada 5: verificación (KYC)
+
+- **Qué:** **verificación KYC de tiendas** (`identity.kyc_submissions`, polimórfica
+  `subject_type`/`subject_id`; M2 usa `store`) + columna `stores.verification_level`
+  (`none|verified`). Flujo: el equipo de la tienda (owner/admin) **envía** una
+  verificación (`doc_type` + documento opcional en `media`) → el **admin de la
+  comunidad** de la tienda la ve en su **cola** y la **aprueba/rechaza** → un
+  **trigger** fija el `verification_level`. Endpoints: `POST/GET
+  /v1/stores/{id}/kyc`, `GET /v1/communities/{id}/kyc` (cola), `POST
+  /v1/kyc/{id}/review`. Además `GET /v1/media/{id}` (nuevo) para ver el documento.
+  Seed: ferretería **aprobada** (→ verified, revisada por Ana) y peluquería
+  **pendiente** en cola.
+- **Por qué:** cierra `kyc_submissions` del mapa y da la verificación de tiendas que
+  el Playbook pide para el piloto; estrena la capacidad de **revisión del admin de
+  comunidad**. Era el último objeto grande de M2 en store.
+- **Impacto / archivos:** `packages/contracts/src/identity.ts` (`KycSubjectType`/
+  `KycDocType`/`KycStatus`/`KycSubmission(+List)`/`CreateKycSubmissionInput`/
+  `ReviewKycInput`), `store.ts` (`StoreVerificationLevel` + `Store.verificationLevel`)
+  + exports; `packages/db/src/schema/identity.ts` (`kycSubmissions`), `store.ts`
+  (`verificationLevel`) + migración `0016_strong_ser_duncan.sql` (tabla + columna +
+  CHECKs + **RLS en capas** + FK blanda a media + **trigger** KYC→verification_level
+  + **política `media_select_kyc`**); `packages/db/src/seed.ts` (2 verificaciones +
+  resumen `kyc=`); `packages/core/src/modules/identity` (`infra/kyc-repo.ts`,
+  `http/kyc-routes.ts` con 4 rutas, exports); `media` (`getMediaById` + `GET
+  /v1/media/{id}`); `store` (`toStore`/`storeOut` con verificationLevel); `apps/api`
+  (monta `kycRouter`); `apps/web` (`lib/stores` getStoreKyc, componente `store-kyc`
+  con subida de documento en dos fases, wiring + badge en la página de tienda);
+  `packages/core/test/integration/kyc.test.ts`.
+- **Decisiones de diseño:**
+  - **`verification_level` lo fija un trigger** `SECURITY DEFINER` (identity→store,
+    `AFTER INSERT OR UPDATE OF status`): aprobar→`verified`, rechazar→`none`. Evita
+    que el core de identity escriba en `store.stores` (cruce de módulos); es atómico
+    con el cambio de estado. Mismo patrón que el trigger de `community_id` (D-05).
+  - **RLS en capas, derivada del store:** `kyc_select` deja ver una verificación de
+    tienda al equipo (owner/admin), al **admin de su comunidad** (revisor) y al admin
+    de plataforma. `kyc_insert` fuerza `status='pending'` y `reviewer_id IS NULL`
+    (el que envía **no puede auto-aprobarse**). `kyc_update` (la revisión) solo la
+    permite el **admin de la comunidad** del sujeto. El handler de review además
+    resuelve la comunidad y gatea con `isCommunityAdmin` (403 temprano).
+  - **Documento = `media` con `owner_type='store'`** (se reusa el flujo de subida,
+    autorizado por `canManageStore`). Para que el **revisor vea el documento** sin
+    acoplar media→kyc, se agrega una **segunda policy permissive** `media_select_kyc`
+    (se combina por OR con `media_select`): una media se ve si existe una
+    verificación visible que la referencia (la subconsulta queda sujeta a
+    `kyc_select`). **Bug atrapado por el smoke:** `k.media_id = id` resolvía `id` a
+    `kyc_submissions.id` (shadowing, la tabla interna también tiene `id`) → siempre
+    falso; se calificó `media.media.id`.
+  - **Scope M2 = KYC de tiendas.** `subject_type` ya es polimórfico (`store|mover`)
+    pero el KYC de **movers** va con M6 (shipping). La UI del **revisor** (consola de
+    admin de comunidad) se **difiere** (no hay espacio de comunidad aún); el flujo de
+    revisión queda completo por API y probado (integración + smoke). La web entrega
+    el lado tienda (enviar + estado + badge verificada).
+  - **`GET /v1/media/{id}`** nuevo (RLS-gated): necesario para que submitter y revisor
+    resuelvan la URL del documento por id; útil en general.
+- **Verificación:** `pnpm check` verde (boundaries 294 módulos, unit 5/5);
+  integración db 6/6 + **core 49/49** (+2 KYC: owner envía→admin ve en cola→aprueba
+  y el **trigger deja la tienda `verified`**; sales no puede revisar (RLS→null) y un
+  no-miembro no la ve); smoke HTTP 11/11 (envío 201, sales 403, cola de comunidad,
+  **revisor ve el documento vía media_select_kyc**, owner no revisa 403, aprobar 200
+  + store verified, review inexistente 404).
+- **Estado para retomar:** store cierra M2 (alta/equipo/pagos/horarios/KYC). Del mapa
+  M2 quedan `templates` e `item_attr_index` (con M4), y KYC de movers (M6).
+  Siguiente sugerido: **M3 inventario** (`stock_levels`/`stock_movements`/
+  `reservations` + worker/Valkey) o **M4 descubrimiento** (feed/búsqueda).
+- **Relacionado:** [diccionario de objetos](../.docs/3B_diccionario_de_objetos.md)
+  (local, §identity `kyc_submissions`), [data-model §identity y §7](architecture/data-model.md),
+  entradas de media (núcleo) y store 3/4.
+
+## 2026-11-01 · `b61759a` · feat — M2 catalog rebanada 2f: colecciones (vitrina)
 
 - **Qué:** **colecciones** (vitrina) de una tienda: `catalog.collections` (título +
   `position`) y la M:N ordenada `catalog.collection_items` (collection_id, item_id,
