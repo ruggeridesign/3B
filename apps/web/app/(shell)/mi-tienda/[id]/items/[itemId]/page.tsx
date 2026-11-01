@@ -2,12 +2,14 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import {
   getItemMedia,
+  getItemServiceDetail,
   getItemVariants,
   getResolvedAttributes,
 } from '../../../../../../lib/catalog';
 import { getMe } from '../../../../../../lib/me';
 import { getStore, getStoreItems } from '../../../../../../lib/stores';
 import { ItemMedia } from '../../../../../_components/item-media';
+import { ItemServiceDetails } from '../../../../../_components/item-service-details';
 import { ItemVariants } from '../../../../../_components/item-variants';
 
 export default async function ItemDetail({
@@ -43,10 +45,13 @@ export default async function ItemDetail({
   const canManage =
     myRole === 'owner' || myRole === 'admin' || myRole === 'catalog';
 
-  const [media, variants, resolved] = await Promise.all([
+  const [media, variants, resolved, serviceDetail] = await Promise.all([
     getItemMedia(itemId),
     getItemVariants(id, itemId),
     getResolvedAttributes(id, item.categoryId ?? undefined),
+    item.kind === 'service'
+      ? getItemServiceDetail(id, itemId)
+      : Promise.resolve(null),
   ]);
   const axes = resolved.filter((a) => a.variantAxis);
 
@@ -74,6 +79,15 @@ export default async function ItemDetail({
       </div>
 
       <ItemMedia itemId={item.id} media={media} canManage={canManage} />
+
+      {item.kind === 'service' && (
+        <ItemServiceDetails
+          storeId={id}
+          itemId={item.id}
+          detail={serviceDetail}
+          canManage={canManage}
+        />
+      )}
 
       <ItemVariants
         storeId={id}

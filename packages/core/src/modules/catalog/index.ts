@@ -22,6 +22,11 @@ export {
   updateItem,
 } from './infra/item-repo';
 export {
+  deleteServiceDetail,
+  getServiceDetail,
+  upsertServiceDetail,
+} from './infra/service-detail-repo';
+export {
   createVariant,
   deleteVariant,
   listVariants,

@@ -1,6 +1,7 @@
 import {
   boolean,
   index,
+  integer,
   jsonb,
   numeric,
   pgSchema,
@@ -132,3 +133,20 @@ export const items = catalog.table(
     index('items_store_idx').on(t.storeId),
   ],
 );
+
+/**
+ * Detalle de un ítem de tipo **servicio** (1:0..1 con el ítem; `item_id` es la
+ * PK). Guarda cuánto dura el turno, dónde se presta (`modality`) y, si es a
+ * domicilio, el radio de cobertura en km. La RLS se deriva del ítem padre (como
+ * las variantes); solo se crea para ítems `kind='service'` (lo exige el handler).
+ */
+export const serviceDetails = catalog.table('service_details', {
+  itemId: uuid('item_id')
+    .primaryKey()
+    .references(() => items.id, { onDelete: 'cascade' }),
+  durationMin: integer('duration_min'),
+  modality: text('modality').notNull().default('in_store'), // in_store | on_site | remote
+  coverageKm: integer('coverage_km'),
+  notes: text('notes'),
+  ...timestamps,
+});

@@ -249,3 +249,32 @@ export const UpdateVariantInput = z.object({
   trackStock: z.boolean().optional(),
 });
 export type UpdateVariantInput = z.infer<typeof UpdateVariantInput>;
+
+// ===== Detalle de servicio (ítems sin stock) =====
+
+/** Dónde se presta el servicio: en el local, a domicilio o de forma remota. */
+export const ServiceModality = z.enum(['in_store', 'on_site', 'remote']);
+export type ServiceModality = z.infer<typeof ServiceModality>;
+
+/** Datos propios de un ítem de tipo servicio (1:0..1 con el ítem). */
+export const ServiceDetail = z.object({
+  itemId: z.string(),
+  durationMin: z.number().int().nullable(),
+  modality: ServiceModality,
+  coverageKm: z.number().int().nullable(),
+  notes: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type ServiceDetail = z.infer<typeof ServiceDetail>;
+
+/**
+ * Alta/edición del detalle de servicio (upsert). `coverageKm` solo tiene sentido
+ * con `modality='on_site'`; el resto son datos orientativos del turno.
+ */
+export const UpsertServiceDetailInput = z.object({
+  durationMin: z.number().int().positive().max(100000).nullable().optional(),
+  modality: ServiceModality.default('in_store'),
+  coverageKm: z.number().int().positive().max(10000).nullable().optional(),
+  notes: z.string().max(2000).nullable().optional(),
+});
+export type UpsertServiceDetailInput = z.infer<typeof UpsertServiceDetailInput>;

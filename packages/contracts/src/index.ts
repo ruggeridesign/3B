@@ -24,9 +24,12 @@ export {
   ItemVariantList,
   MoneyAmount,
   PriceMode,
+  ServiceDetail,
+  ServiceModality,
   Sku,
   UpdateItemInput,
   UpdateVariantInput,
+  UpsertServiceDetailInput,
 } from './catalog';
 export {
   Capabilities,

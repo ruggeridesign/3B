@@ -43,13 +43,14 @@
   verticales siguiendo `data-model.md §7`. HECHAS: **store 1 (alta)**, **2
   (equipo/roles)**, **3 (métodos de pago)**, **núcleo de `media` (backend)**,
   **catalog 1 (ítems)**, **2a (categorías)**, **2b (atributos: definiciones +
-  herencia)**, **2c (valores de atributo en ítems)** y **2d (variantes)**. Catalog
-  queda con su núcleo completo (taxonomía, atributos, ítems con valores, variantes)
-  **+ página de detalle de ítem con imágenes (media) y editor de variantes**.
+  herencia)**, **2c (valores de atributo en ítems)**, **2d (variantes)** y **2e
+  (detalle de servicio)**. Catalog queda con su núcleo completo (taxonomía,
+  atributos, ítems con valores, variantes, detalle de servicio) **+ página de
+  detalle de ítem con imágenes (media), editor de variantes y detalle de servicio**.
   Trabajo autónomo en curso contra el mapa de datos de `.docs`
   (`3B_diccionario_de_objetos.md`, 62 entidades/14 dominios): se avanza fase por
   fase creando todos los objetos. Diseño visual: **se difiere** (habrá un skill de
-  UI). Siguiente: `service_details`/`store_hours`/`collections`, **KYC**, y **M3
+  UI). Siguiente: `store_hours`/`collections`, **KYC**, y **M3
   inventario** / **M4 descubrimiento** / **M5 pedidos**.
 - **Localhost demo:** `pnpm db:up` + `pnpm --filter @3b/api dev` (8787) +
   `pnpm --filter @3b/web dev` (3000). Usuarios seed, password `Password123!`
@@ -64,7 +65,55 @@
 
 ---
 
-## 2026-11-01 · _(este commit)_ · feat — M2 página de detalle de ítem + imágenes + editor de variantes
+## 2026-11-01 · _(este commit)_ · feat — M2 catalog rebanada 2e: detalle de servicio
+
+- **Qué:** **detalle de servicio** de un ítem (`catalog.service_details`, 1:0..1
+  con el ítem): `duration_min`, `modality` (`in_store`|`on_site`|`remote`),
+  `coverage_km` (radio, solo con `on_site`) y `notes`. Upsert anidado
+  `GET/PUT/DELETE /v1/stores/{id}/items/{itemId}/service`. Solo aplica a ítems
+  `kind='service'` (el handler lo exige → 400 si no). Web: sección **Detalle de
+  servicio** en la página de detalle del ítem, visible solo para servicios. Seed:
+  "Corte y peinado" trae un detalle (45 min, en el local).
+- **Por qué:** completa el modelo del ítem de catalog para los servicios, que no
+  tenían datos propios (duración/modalidad/cobertura). Cierra el núcleo de catalog.
+- **Impacto / archivos:** `packages/contracts/src/catalog.ts` (`ServiceModality`/
+  `ServiceDetail`/`UpsertServiceDetailInput`) + export en `index.ts`;
+  `packages/db/src/schema/catalog.ts` (`serviceDetails`, `item_id` como PK/FK) +
+  migración `0013_nappy_onslaught.sql` (tabla **+ RLS derivada del ítem padre +
+  grants**); `packages/db/src/seed.ts` (detalle del corte + resumen con `servicios=`);
+  `packages/core/src/modules/catalog/infra/service-detail-repo.ts` (get/upsert/
+  delete) + router (3 rutas) + exports; `apps/web` (`lib/catalog` getItemServiceDetail,
+  componente `item-service-details`, wiring en la página de detalle);
+  `packages/core/test/integration/service-detail.test.ts`.
+- **Decisiones de diseño:**
+  - **`item_id` como PK** (no un `id` propio): la relación es 1:0..1, así que la PK
+    es la FK al ítem. El alta/edición es un **upsert** (`ON CONFLICT (item_id) DO
+    UPDATE`); reemplaza, no hace merge (campos ausentes → null).
+  - **RLS derivada del ítem padre** (igual que `item_variants`): subconsulta
+    `EXISTS (SELECT 1 FROM catalog.items i WHERE i.id = item_id …)` sujeta a la RLS
+    de items → el detalle se ve si su ítem se ve; se gestiona si sos owner/admin/
+    catalog de la tienda. Sin denormalizar `store_id`.
+  - **Gate `kind='service'` en el handler** (no en la RLS/CHECK): la RLS ya no
+    conoce el `kind` sin otra subconsulta; el handler resuelve el ítem (`getItem`) y
+    rechaza con **400** si es producto. Más claro y con mejor mensaje.
+  - **`duration_min`/`coverage_km` como enteros** (no `numeric`): no son dinero;
+    minutos y km enteros alcanzan para el MVP. `coverage_km` solo tiene sentido con
+    `on_site` (la web oculta el campo en otras modalidades).
+- **Verificación:** `pnpm check` verde (boundaries 275 módulos, unit 5/5);
+  integración db 6/6 + **core 42/42** (+2 de servicio: upsert crear→reemplazar +
+  lectura, sales bloqueado por RLS, no-miembro no ve el detalle de un borrador);
+  smoke HTTP 10/10 (GET del seed, upsert on_site, persistencia, 400 en producto,
+  400 modality inválida, delete 204→null, delete repetido 404).
+- **Estado para retomar:** catalog **cerrado**. Siguiente del mapa de `.docs`:
+  `store_hours` (módulo store), `collections`/`collection_items` (vitrina,
+  PROPUESTO); **KYC** (`identity.kyc_submissions` + `stores.verification_level` +
+  flujo de revisión); **M3 inventario** (`stock_levels`/`stock_movements`/
+  `reservations`).
+- **Relacionado:** [diccionario de objetos](../.docs/3B_diccionario_de_objetos.md)
+  (local, §catalog `service_details`), [data-model §catalog](architecture/data-model.md),
+  entrada de catalog 2d (variantes, mismo patrón de RLS por ítem padre).
+
+## 2026-11-01 · `26ab5c7` · feat — M2 página de detalle de ítem + imágenes + editor de variantes
 
 - **Qué:** página web `/mi-tienda/[id]/items/[itemId]` que reúne **imágenes del
   ítem** (subida directa en dos fases reusando `media` con `owner_type='item'`),

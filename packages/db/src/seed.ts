@@ -314,6 +314,17 @@ async function main() {
     ])
     .onConflictDoNothing();
 
+  // Detalle de servicio del corte y peinado (ítem de servicio sin stock).
+  await db
+    .insert(schema.serviceDetails)
+    .values({
+      itemId: '44444444-4444-4444-4444-444444444403',
+      durationMin: 45,
+      modality: 'in_store',
+      notes: 'Reservar con 24 h de anticipación.',
+    })
+    .onConflictDoNothing();
+
   // Variantes del taladro (eje: color). SKU único por ítem.
   await db
     .insert(schema.itemVariants)
@@ -336,16 +347,17 @@ async function main() {
     .onConflictDoNothing();
 
   // Resumen
-  const [[c], [u], [s], [m], [i], [v]] = await Promise.all([
+  const [[c], [u], [s], [m], [i], [v], [sd]] = await Promise.all([
     sql`select count(*)::int as n from community.communities`,
     sql`select count(*)::int as n from identity.users`,
     sql`select count(*)::int as n from store.stores`,
     sql`select count(*)::int as n from community.memberships`,
     sql`select count(*)::int as n from catalog.items`,
     sql`select count(*)::int as n from catalog.item_variants`,
+    sql`select count(*)::int as n from catalog.service_details`,
   ]);
   console.log(
-    `[seed] comunidades=${c.n} usuarios=${u.n} tiendas=${s.n} membresías=${m.n} ítems=${i.n} variantes=${v.n}`,
+    `[seed] comunidades=${c.n} usuarios=${u.n} tiendas=${s.n} membresías=${m.n} ítems=${i.n} variantes=${v.n} servicios=${sd.n}`,
   );
 
   await sql.end();

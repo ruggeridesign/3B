@@ -24,6 +24,11 @@ import {
   updateItem,
 } from '../infra/item-repo';
 import {
+  deleteServiceDetail,
+  getServiceDetail,
+  upsertServiceDetail,
+} from '../infra/service-detail-repo';
+import {
   createVariant,
   deleteVariant,
   listVariants,
@@ -181,6 +186,34 @@ const variantParam = z.object({
   itemId: z.string().openapi({ param: { name: 'itemId', in: 'path' } }),
   variantId: z.string().openapi({ param: { name: 'variantId', in: 'path' } }),
 });
+
+// ----- Detalle de servicio -----
+const serviceModality = z.enum(['in_store', 'on_site', 'remote']);
+
+const serviceDetailOut = z
+  .object({
+    itemId: z.string(),
+    durationMin: z.number().int().nullable(),
+    modality: serviceModality,
+    coverageKm: z.number().int().nullable(),
+    notes: z.string().nullable(),
+    createdAt: z.string(),
+  })
+  .openapi('ServiceDetail');
+
+// La respuesta del GET puede venir vacía (el ítem aún no tiene detalle).
+const serviceDetailGetOut = z
+  .object({ serviceDetail: serviceDetailOut.nullable() })
+  .openapi('ServiceDetailGet');
+
+const upsertServiceDetailBody = z
+  .object({
+    durationMin: z.number().int().positive().max(100000).nullable().optional(),
+    modality: serviceModality.default('in_store'),
+    coverageKm: z.number().int().positive().max(10000).nullable().optional(),
+    notes: z.string().max(2000).nullable().optional(),
+  })
+  .openapi('UpsertServiceDetail');
 
 // ----- Atributos -----
 const attrScope = z.enum(['global', 'category', 'store']);
@@ -686,6 +719,137 @@ export function catalogRouter() {
       }
       const existed = await deleteVariant(db, itemId, variantId);
       if (!existed) return c.json({ error: 'No existe esa variante.' }, 404);
+      return c.body(null, 204);
+    },
+  );
+
+  // ===== Detalle de servicio =====
+
+  // Leer el detalle de servicio de un ítem (null si no tiene). La RLS acota por
+  // visibilidad del ítem.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/stores/{id}/items/{itemId}/service',
+      tags: ['catalog'],
+      summary: 'Detalle de servicio del ítem',
+      request: { params: itemParam },
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: serviceDetailGetOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { itemId } = c.req.valid('param');
+      const serviceDetail = await getServiceDetail(db, itemId);
+      return c.json({ serviceDetail }, 200);
+    },
+  );
+
+  // Crear o actualizar el detalle (upsert). Solo owner/admin/catalog y solo para
+  // ítems de tipo servicio.
+  app.openapi(
+    createRoute({
+      method: 'put',
+      path: '/stores/{id}/items/{itemId}/service',
+      tags: ['catalog'],
+      summary: 'Guardar el detalle de servicio del ítem',
+      request: {
+        params: itemParam,
+        body: {
+          content: { 'application/json': { schema: upsertServiceDetailBody } },
+        },
+      },
+      responses: {
+        200: {
+          description: 'Guardado',
+          content: { 'application/json': { schema: serviceDetailOut } },
+        },
+        400: {
+          description: 'El ítem no es un servicio',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No podés gestionar el catálogo de esta tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'No existe ese ítem',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id, itemId } = c.req.valid('param');
+      const body = c.req.valid('json');
+      if (!(await canManageCatalog(db, id))) {
+        return c.json(
+          { error: 'No podés gestionar el catálogo de esta tienda.' },
+          403,
+        );
+      }
+      const item = await getItem(db, id, itemId);
+      if (!item) return c.json({ error: 'No existe ese ítem.' }, 404);
+      if (item.kind !== 'service') {
+        return c.json(
+          { error: 'El detalle de servicio solo aplica a ítems de servicio.' },
+          400,
+        );
+      }
+      const serviceDetail = await upsertServiceDetail(db, itemId, body);
+      return c.json(serviceDetail, 200);
+    },
+  );
+
+  // Borrar el detalle de servicio. Solo owner/admin/catalog.
+  app.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/stores/{id}/items/{itemId}/service',
+      tags: ['catalog'],
+      summary: 'Borrar el detalle de servicio del ítem',
+      request: { params: itemParam },
+      responses: {
+        204: { description: 'Borrado' },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No podés gestionar el catálogo de esta tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'No tiene detalle de servicio',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id, itemId } = c.req.valid('param');
+      if (!(await canManageCatalog(db, id))) {
+        return c.json(
+          { error: 'No podés gestionar el catálogo de esta tienda.' },
+          403,
+        );
+      }
+      const existed = await deleteServiceDetail(db, itemId);
+      if (!existed) {
+        return c.json({ error: 'No tiene detalle de servicio.' }, 404);
+      }
       return c.body(null, 204);
     },
   );

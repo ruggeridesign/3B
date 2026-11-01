@@ -3,6 +3,7 @@ import type {
   Category,
   ItemVariant,
   Media,
+  ServiceDetail,
 } from '@3b/contracts';
 import { cookies } from 'next/headers';
 
@@ -82,6 +83,26 @@ export async function getItemVariants(
     return data.variants;
   } catch {
     return [];
+  }
+}
+
+/** Detalle de servicio de un ítem (null si no tiene o si falla). */
+export async function getItemServiceDetail(
+  storeId: string,
+  itemId: string,
+): Promise<ServiceDetail | null> {
+  const cookie = await cookieHeader();
+  if (!cookie) return null;
+  try {
+    const res = await fetch(
+      `${API}/v1/stores/${storeId}/items/${itemId}/service`,
+      { headers: { cookie }, cache: 'no-store' },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { serviceDetail: ServiceDetail | null };
+    return data.serviceDetail;
+  } catch {
+    return null;
   }
 }
 
