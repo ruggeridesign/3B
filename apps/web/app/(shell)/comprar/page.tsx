@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { getDiscoveryItems } from '../../../lib/catalog';
+import { getDiscoveryFacets, getDiscoveryItems } from '../../../lib/catalog';
 import { getMe } from '../../../lib/me';
+import { DiscoveryFacetsPanel } from '../../_components/discovery-facets';
 import { DiscoverySearch } from '../../_components/discovery-search';
 
 const PRICE_MODE_SUFFIX: Record<string, string> = {
@@ -13,13 +14,24 @@ const PRICE_MODE_SUFFIX: Record<string, string> = {
 export default async function Comprar({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; kind?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    kind?: string;
+    attr?: string | string[];
+  }>;
 }) {
   const me = await getMe();
   if (!me) redirect('/login');
 
-  const { q = '', kind = '' } = await searchParams;
-  const { items } = await getDiscoveryItems({ q, kind });
+  const { q = '', kind = '', attr } = await searchParams;
+  const active = (Array.isArray(attr) ? attr : attr ? [attr] : []).filter((t) =>
+    t.includes(':'),
+  );
+  const attrs = active.join(';');
+  const [{ items }, { facets }] = await Promise.all([
+    getDiscoveryItems({ q, kind, attrs }),
+    getDiscoveryFacets({ q, kind }),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -31,6 +43,8 @@ export default async function Comprar({
       </div>
 
       <DiscoverySearch initialQ={q} initialKind={kind} />
+
+      <DiscoveryFacetsPanel facets={facets} active={active} />
 
       {items.length > 0 ? (
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

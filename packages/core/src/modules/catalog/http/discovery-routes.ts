@@ -1,10 +1,26 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import { type ApiVariables, requireSession, sessionCtx } from '../../../http';
 import {
+  getFacets,
   getPublicItem,
   getPublicStore,
   searchItems,
 } from '../infra/discovery-repo';
+
+/** Parsea `attrs=key:value;key:value` a pares {key,value}. */
+function parseAttrs(raw?: string): { key: string; value: string }[] {
+  if (!raw) return [];
+  return raw
+    .split(';')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => {
+      const i = s.indexOf(':');
+      return i > 0 ? { key: s.slice(0, i), value: s.slice(i + 1) } : null;
+    })
+    .filter((x): x is { key: string; value: string } => x !== null)
+    .slice(0, 10);
+}
 
 /** Opciones del router de descubrimiento (config inyectada desde la app). */
 export interface DiscoveryRouterOptions {
@@ -123,9 +139,28 @@ const discoveryQuery = z.object({
   storeId: uuid.optional(),
   categoryId: uuid.optional(),
   kind: kind.optional(),
+  attrs: z.string().max(400).optional(), // key:value;key:value
   limit: z.coerce.number().int().min(1).max(50).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 });
+
+const facetsQuery = z.object({
+  q: z.string().max(120).optional(),
+  communityId: uuid.optional(),
+  storeId: uuid.optional(),
+  categoryId: uuid.optional(),
+  kind: kind.optional(),
+});
+
+const facetOut = z
+  .object({
+    key: z.string(),
+    values: z.array(z.object({ value: z.string(), count: z.number().int() })),
+  })
+  .openapi('DiscoveryFacet');
+const facetsOut = z
+  .object({ facets: z.array(facetOut) })
+  .openapi('DiscoveryFacets');
 
 const errorSchema = z.object({ error: z.string() }).openapi('DiscoveryError');
 
@@ -158,9 +193,39 @@ export function discoveryRouter({ mediaPublicUrl }: DiscoveryRouterOptions) {
     }),
     async (c) => {
       const { db } = sessionCtx(c);
-      const params = c.req.valid('query');
-      const result = await searchItems(db, params);
+      const { attrs, ...params } = c.req.valid('query');
+      const result = await searchItems(db, {
+        ...params,
+        attrs: parseAttrs(attrs),
+      });
       return c.json(result, 200);
+    },
+  );
+
+  // Facetas (filtros dinámicos) para el contexto de búsqueda actual.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/discovery/facets',
+      tags: ['discovery'],
+      summary: 'Facetas (valores de atributo disponibles) del feed',
+      request: { query: facetsQuery },
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: facetsOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const params = c.req.valid('query');
+      const facets = await getFacets(db, params);
+      return c.json(facets, 200);
     },
   );
 

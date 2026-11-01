@@ -1,4 +1,5 @@
 import type {
+  DiscoveryFacets,
   DiscoveryItem,
   DiscoveryQuery,
   PublicItem,
@@ -57,13 +58,21 @@ export async function searchItems(
   db: AppTransaction,
   params: DiscoveryQuery,
 ): Promise<{ items: DiscoveryItem[]; hasMore: boolean }> {
-  const { q, communityId, storeId, categoryId, kind, limit, offset } = params;
+  const { q, communityId, storeId, categoryId, kind, attrs, limit, offset } =
+    params;
 
   const conds = [sql`i.status = 'published'`];
   if (communityId) conds.push(sql`i.community_id = ${communityId}`);
   if (storeId) conds.push(sql`i.store_id = ${storeId}`);
   if (categoryId) conds.push(sql`i.category_id = ${categoryId}`);
   if (kind) conds.push(sql`i.kind = ${kind}`);
+  // Filtros por atributo (AND): el ítem debe tener cada (key, value).
+  for (const a of attrs ?? []) {
+    conds.push(sql`EXISTS (
+      SELECT 1 FROM catalog.item_attr_index a
+      WHERE a.item_id = i.id AND a.key = ${a.key} AND a.value_text = ${a.value}
+    )`);
+  }
 
   const trimmed = q?.trim();
   const tsq = trimmed
@@ -267,5 +276,49 @@ export async function getPublicStore(
       createdAt: new Date(h.created_at).toISOString(),
     })),
     items,
+  };
+}
+
+/**
+ * Facetas (filtros dinámicos) para un contexto de búsqueda: valores de atributo
+ * disponibles entre los ítems publicados que matchean el filtro base (comunidad/
+ * tienda/categoría/tipo/`q`), con su conteo. No aplica los filtros de atributo
+ * (así se ven todas las opciones). La RLS acota (join a items + index).
+ */
+export async function getFacets(
+  db: AppTransaction,
+  params: Omit<DiscoveryQuery, 'attrs' | 'limit' | 'offset'>,
+): Promise<DiscoveryFacets> {
+  const { q, communityId, storeId, categoryId, kind } = params;
+  const conds = [sql`i.status = 'published'`, sql`a.value_text IS NOT NULL`];
+  if (communityId) conds.push(sql`i.community_id = ${communityId}`);
+  if (storeId) conds.push(sql`i.store_id = ${storeId}`);
+  if (categoryId) conds.push(sql`i.category_id = ${categoryId}`);
+  if (kind) conds.push(sql`i.kind = ${kind}`);
+  const trimmed = q?.trim();
+  if (trimmed) {
+    conds.push(
+      sql`(i.search_tsv @@ websearch_to_tsquery('spanish', catalog.f_unaccent(${trimmed})) OR catalog.f_unaccent(i.title) ILIKE '%' || catalog.f_unaccent(${trimmed}) || '%')`,
+    );
+  }
+  const where = sql.join(conds, sql` AND `);
+
+  const rows = (await db.execute(sql`
+    SELECT a.key, a.value_text AS value, count(*)::int AS count
+    FROM catalog.item_attr_index a
+    JOIN catalog.items i ON i.id = a.item_id
+    WHERE ${where}
+    GROUP BY a.key, a.value_text
+    ORDER BY a.key, count DESC, a.value_text
+  `)) as unknown as Array<{ key: string; value: string; count: number }>;
+
+  const byKey = new Map<string, { value: string; count: number }[]>();
+  for (const r of rows) {
+    const list = byKey.get(r.key) ?? [];
+    list.push({ value: r.value, count: r.count });
+    byKey.set(r.key, list);
+  }
+  return {
+    facets: [...byKey.entries()].map(([key, values]) => ({ key, values })),
   };
 }

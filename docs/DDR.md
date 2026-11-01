@@ -59,10 +59,15 @@
   - **M4 r3 — ficha pública de tienda (storefront)**: `GET /v1/discovery/stores/{id}`
     (cabecera + verificada + horario + ítems publicados; reusa `searchItems` con
     filtro `storeId`). Página `/comprar/tienda/[id]`; la ficha de ítem enlaza al
-    storefront. **Difieren**: filtros por atributo (`item_attr_index`), comunidades
-    **vecinas** (`community_links`) y `ranking.item_scores`.
-  - Siguiente: **M4 r4** (filtros por atributo / vecinas / ranking) o **M5 pedidos**
-    (carrito/checkout; trae las **reservas** de stock y enciende worker+Valkey).
+    storefront.
+  - **M4 r4 — filtros por atributo (facetas)**: proyección `catalog.item_attr_index`
+    (una fila por `key`, mantenida por trigger desde `items.attributes`); el feed
+    acepta `attrs=key:value;…` (AND, match exacto) y `GET /v1/discovery/facets`
+    devuelve valores disponibles con conteo (dinámicos, solo publicados). Página
+    Comprar con panel de facetas toggleable. **Difieren**: comunidades **vecinas**
+    (`community_links`) y `ranking.item_scores`.
+  - Siguiente: **M4 r5** (vecinas + ranking) o **M5 pedidos** (carrito/checkout;
+    trae las **reservas** de stock y enciende worker+Valkey).
 - **M2 (cerrado) · Tienda + Catálogo + núcleo de media**, por rebanadas
   verticales siguiendo `data-model.md §7`. HECHAS: **store 1 (alta)**, **2
   (equipo/roles)**, **3 (métodos de pago)**, **4 (horarios)**, **5 (KYC/
@@ -92,7 +97,53 @@
 
 ---
 
-## 2026-11-01 · _(este commit)_ · feat — M4 rebanada 3: ficha pública de tienda (storefront)
+## 2026-11-01 · _(este commit)_ · feat — M4 rebanada 4: filtros por atributo (facetas)
+
+- **Qué:** filtros dinámicos por valor de atributo. Proyección `catalog.item_attr_index`
+  (una fila por `item_id`+`key`, con `value_text` y `value_num`), mantenida por un
+  **trigger** desde `items.attributes`. El feed acepta `attrs=key:value;key:value`
+  (AND, match exacto) y `GET /v1/discovery/facets` devuelve los valores disponibles
+  con conteo para el contexto de búsqueda (solo publicados visibles). Web: panel de
+  facetas toggleable en **Comprar** (cada valor es un chip que agrega/quita un
+  `attr` en la URL). Seed: taladro con `{marca:Bosch, voltaje:650, garantia_meses:12}`.
+- **Por qué:** la "filtros dinámicos" del roadmap M4 — refinar el feed por atributos
+  sin hardcodear facetas (se derivan del catálogo real).
+- **Impacto / archivos:** `packages/contracts/src/catalog.ts` (`AttrFilter` + `attrs`
+  en `DiscoveryQuery`; `DiscoveryFacet`/`DiscoveryFacets`) + exports;
+  `packages/db/src/schema/catalog.ts` (`itemAttrIndex`) + migración
+  `0020_young_nightcrawler.sql` (tabla + **RLS derivada del ítem** + grants +
+  **trigger de reindexado** + backfill); `packages/db/src/seed.ts` (atributos en
+  ítems + resumen `attrIndex=`); `packages/core/src/modules/catalog`
+  (`discovery-repo` `getFacets` + filtro `attrs` en `searchItems`; `discovery-routes`
+  ruta de facets + parseo `attrs`; exports); `apps/web` (`lib/catalog`
+  getDiscoveryFacets + `attrs`, componente `discovery-facets`, panel en Comprar);
+  `packages/core/test/integration/facets.test.ts`.
+- **Decisiones de diseño:**
+  - **Proyección por trigger (como stock/attr-index):** `item_attr_index` es solo
+    lectura para la app; el trigger `tg_reindex_item_attrs` (SECURITY DEFINER) la
+    reconstruye en cada insert/update de `attributes` (`DELETE` + `INSERT ... FROM
+    jsonb_each`). `value_text = value #>> '{}'` (escalar sin comillas para cualquier
+    tipo); `value_num` solo si es número (para rangos futuros). Backfill de los
+    existentes en la migración.
+  - **Facetas por `key` (no por `attribute_id`):** `items.attributes` se indexa por
+    la **clave**; alcanza para filtrar/facetear y evita resolver definiciones. Las
+    facetas se computan sobre el filtro base (comunidad/tienda/categoría/tipo/`q`)
+    **sin** aplicar los filtros de atributo → se ven todas las opciones.
+  - **Filtro AND por `EXISTS`:** cada `key:value` agrega un `EXISTS` sobre el índice;
+    el valor va **parametrizado** (sin inyección). `attrs` viaja como un string
+    `key:value;…` (evita el parseo de params repetidos de query).
+  - **RLS:** `item_attr_index` se ve si se ve su ítem (igual que stock/variantes);
+    las facetas y el filtro quedan acotados a publicados visibles por la RLS de items.
+- **Verificación:** `pnpm check` verde (boundaries 334 módulos, unit 9/9);
+  integración db 6/6 + **core 66/66** (+3 facets: facetas solo de publicados,
+  filtro exacto, AND); seed `attrIndex=4` (trigger pobló el índice); smoke HTTP 7/7
+  (Bosch en facetas, Stanley/borrador no, filtro exacto, AND contradictorio vacío).
+- **Estado para retomar:** falta de M4: **vecinas** (`community_links`) y `ranking`.
+  Luego **M5 pedidos**.
+- **Relacionado:** ROADMAP M4 ("filtros dinámicos"), entradas de M4 r1–r3, catalog 2c
+  (valores de atributo).
+
+## 2026-11-01 · `e9717b4` · feat — M4 rebanada 3: ficha pública de tienda (storefront)
 
 - **Qué:** storefront público. `GET /v1/discovery/stores/{id}` devuelve la tienda
   (nombre/slug/tipo/**verificada**/comunidad) + **horario** + **ítems publicados**.

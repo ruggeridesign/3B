@@ -2,6 +2,7 @@ import type {
   AttributeDefinition,
   Category,
   Collection,
+  DiscoveryFacets,
   DiscoveryItem,
   ItemVariant,
   Media,
@@ -23,6 +24,7 @@ export async function getDiscoveryItems(params: {
   q?: string;
   kind?: string;
   categoryId?: string;
+  attrs?: string; // "key:value;key:value"
   limit?: number;
   offset?: number;
 }): Promise<{ items: DiscoveryItem[]; hasMore: boolean }> {
@@ -32,6 +34,7 @@ export async function getDiscoveryItems(params: {
   if (params.q) qs.set('q', params.q);
   if (params.kind) qs.set('kind', params.kind);
   if (params.categoryId) qs.set('categoryId', params.categoryId);
+  if (params.attrs) qs.set('attrs', params.attrs);
   if (params.limit != null) qs.set('limit', String(params.limit));
   if (params.offset != null) qs.set('offset', String(params.offset));
   try {
@@ -43,6 +46,30 @@ export async function getDiscoveryItems(params: {
     return (await res.json()) as { items: DiscoveryItem[]; hasMore: boolean };
   } catch {
     return { items: [], hasMore: false };
+  }
+}
+
+/** Facetas (filtros dinámicos) del feed para el contexto dado. */
+export async function getDiscoveryFacets(params: {
+  q?: string;
+  kind?: string;
+  categoryId?: string;
+}): Promise<DiscoveryFacets> {
+  const cookie = await cookieHeader();
+  if (!cookie) return { facets: [] };
+  const qs = new URLSearchParams();
+  if (params.q) qs.set('q', params.q);
+  if (params.kind) qs.set('kind', params.kind);
+  if (params.categoryId) qs.set('categoryId', params.categoryId);
+  try {
+    const res = await fetch(`${API}/v1/discovery/facets?${qs.toString()}`, {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+    if (!res.ok) return { facets: [] };
+    return (await res.json()) as DiscoveryFacets;
+  } catch {
+    return { facets: [] };
   }
 }
 

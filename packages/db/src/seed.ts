@@ -281,6 +281,7 @@ async function main() {
         currency: 'USD',
         priceMode: 'fixed',
         status: 'published',
+        attributes: { marca: 'Bosch', voltaje: 650, garantia_meses: 12 },
         publishedAt,
       },
       {
@@ -295,6 +296,7 @@ async function main() {
         currency: 'USD',
         priceMode: 'fixed',
         status: 'draft',
+        attributes: { marca: 'Stanley' },
       },
       {
         id: '44444444-4444-4444-4444-444444444403',
@@ -438,7 +440,7 @@ async function main() {
     .onConflictDoNothing();
 
   // Resumen
-  const [[c], [u], [s], [m], [i], [v], [sd], [h], [col], [k], [st]] =
+  const [[c], [u], [s], [m], [i], [v], [sd], [h], [col], [k], [st], [ai]] =
     await Promise.all([
       sql`select count(*)::int as n from community.communities`,
       sql`select count(*)::int as n from identity.users`,
@@ -451,9 +453,10 @@ async function main() {
       sql`select count(*)::int as n from catalog.collections`,
       sql`select count(*)::int as n from identity.kyc_submissions`,
       sql`select count(*)::int as n from inventory.stock_levels`,
+      sql`select count(*)::int as n from catalog.item_attr_index`,
     ]);
   console.log(
-    `[seed] comunidades=${c.n} usuarios=${u.n} tiendas=${s.n} membresías=${m.n} ítems=${i.n} variantes=${v.n} servicios=${sd.n} horarios=${h.n} colecciones=${col.n} kyc=${k.n} stock=${st.n}`,
+    `[seed] comunidades=${c.n} usuarios=${u.n} tiendas=${s.n} membresías=${m.n} ítems=${i.n} variantes=${v.n} servicios=${sd.n} horarios=${h.n} colecciones=${col.n} kyc=${k.n} stock=${st.n} attrIndex=${ai.n}`,
   );
 
   await sql.end();

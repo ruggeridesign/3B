@@ -1,5 +1,6 @@
 export {
   AddCollectionItemInput,
+  AttrFilter,
   AttributeDataType,
   AttributeDefinition,
   AttributeDefinitionList,
@@ -20,6 +21,8 @@ export {
   CreateStoreAttributeInput,
   CreateVariantInput,
   Currency,
+  DiscoveryFacet,
+  DiscoveryFacets,
   DiscoveryItem,
   DiscoveryItemList,
   DiscoveryQuery,

@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   customType,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -186,6 +187,29 @@ export const collections = catalog.table(
   (t) => [
     index('collections_store_idx').on(t.storeId),
     unique('collections_store_title_unique').on(t.storeId, t.title),
+  ],
+);
+
+/**
+ * Proyección de búsqueda de los valores de atributo de un ítem (una fila por
+ * `key`). La mantiene un trigger desde `items.attributes`; `value_num` se llena
+ * cuando el valor es numérico (para rangos). Solo lectura para la app; habilita
+ * filtros/facetas en el descubrimiento. RLS derivada de la visibilidad del ítem.
+ */
+export const itemAttrIndex = catalog.table(
+  'item_attr_index',
+  {
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id, { onDelete: 'cascade' }),
+    key: text('key').notNull(),
+    valueText: text('value_text'),
+    valueNum: doublePrecision('value_num'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.itemId, t.key] }),
+    index('item_attr_idx_key_text').on(t.key, t.valueText),
+    index('item_attr_idx_key_num').on(t.key, t.valueNum),
   ],
 );
 

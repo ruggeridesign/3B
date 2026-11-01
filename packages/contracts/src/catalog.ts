@@ -408,6 +408,13 @@ export const PublicItem = z.object({
 });
 export type PublicItem = z.infer<typeof PublicItem>;
 
+/** Filtro por valor de atributo (match exacto por `key`). */
+export const AttrFilter = z.object({
+  key: AttributeKey,
+  value: z.string().min(1).max(120),
+});
+export type AttrFilter = z.infer<typeof AttrFilter>;
+
 /** Parámetros de búsqueda del feed. Todo opcional salvo paginación con default. */
 export const DiscoveryQuery = z.object({
   q: z.string().max(120).optional(),
@@ -415,10 +422,25 @@ export const DiscoveryQuery = z.object({
   storeId: Uuid.optional(),
   categoryId: Uuid.optional(),
   kind: ItemKind.optional(),
+  // Filtros por atributo (AND: el ítem debe cumplir todos).
+  attrs: z.array(AttrFilter).max(10).optional(),
   limit: z.number().int().min(1).max(50).default(20),
   offset: z.number().int().min(0).default(0),
 });
 export type DiscoveryQuery = z.infer<typeof DiscoveryQuery>;
+
+/** Una faceta: un atributo (`key`) con sus valores disponibles y cuántos hay. */
+export const DiscoveryFacet = z.object({
+  key: z.string(),
+  values: z.array(z.object({ value: z.string(), count: z.number().int() })),
+});
+export type DiscoveryFacet = z.infer<typeof DiscoveryFacet>;
+
+/** Facetas disponibles para un contexto de búsqueda (filtros dinámicos). */
+export const DiscoveryFacets = z.object({
+  facets: z.array(DiscoveryFacet),
+});
+export type DiscoveryFacets = z.infer<typeof DiscoveryFacets>;
 
 /**
  * Ficha pública de una tienda (storefront): cabecera + horario + ítems publicados.

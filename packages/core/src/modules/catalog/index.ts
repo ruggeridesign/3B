@@ -27,6 +27,7 @@ export {
   updateCollection,
 } from './infra/collection-repo';
 export {
+  getFacets,
   getPublicItem,
   getPublicStore,
   searchItems,
