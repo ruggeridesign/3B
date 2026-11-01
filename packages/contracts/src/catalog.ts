@@ -145,6 +145,14 @@ export const Currency = z
   .string()
   .regex(/^[A-Z]{3}$/, 'Moneda inválida (ej: USD, VES).');
 
+/** Valores de atributo del ítem: mapa `key → valor`. Se validan contra las
+ * definiciones resueltas (global+categoría+tienda) en el servidor. */
+export const AttributeValues = z.record(
+  z.string(),
+  z.union([z.string(), z.number(), z.boolean()]),
+);
+export type AttributeValues = z.infer<typeof AttributeValues>;
+
 /** Representación pública de un ítem. */
 export const Item = z.object({
   id: z.string(),
@@ -159,6 +167,7 @@ export const Item = z.object({
   currency: Currency,
   priceMode: PriceMode,
   status: ItemStatus,
+  attributes: AttributeValues,
   publishedAt: z.string().nullable(),
   createdAt: z.string(),
 });
@@ -179,6 +188,7 @@ export const CreateItemInput = z.object({
   currency: Currency.default('USD'),
   priceMode: PriceMode.default('fixed'),
   status: ItemStatus.default('draft'),
+  attributes: AttributeValues.optional(),
 });
 export type CreateItemInput = z.infer<typeof CreateItemInput>;
 
@@ -191,5 +201,6 @@ export const UpdateItemInput = z.object({
   currency: Currency.optional(),
   priceMode: PriceMode.optional(),
   status: ItemStatus.optional(),
+  attributes: AttributeValues.optional(),
 });
 export type UpdateItemInput = z.infer<typeof UpdateItemInput>;

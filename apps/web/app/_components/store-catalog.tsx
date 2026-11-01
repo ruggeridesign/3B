@@ -1,6 +1,7 @@
 'use client';
 
 import type {
+  AttributeDefinition,
   Category,
   Item,
   ItemKind,
@@ -9,7 +10,7 @@ import type {
 } from '@3b/contracts';
 import { Button, cn, Input, Label } from '@3b/ui';
 import { useRouter } from 'next/navigation';
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 
 const fieldClass = cn(
   'h-9 w-full rounded-md border border-input bg-field px-3 text-sm',
@@ -109,6 +110,13 @@ export function StoreCatalog({
                     : ''}{' '}
                   · /{it.slug}
                 </p>
+                {Object.keys(it.attributes).length > 0 && (
+                  <p className="text-muted-foreground text-xs">
+                    {Object.entries(it.attributes)
+                      .map(([k, v]) => `${k}: ${v}`)
+                      .join(' · ')}
+                  </p>
+                )}
               </div>
 
               {canManage && (
@@ -170,6 +178,25 @@ function AddItem({
   const currencyId = useId();
   const categoryId = useId();
   const [loading, setLoading] = useState(false);
+  const [category, setCategory] = useState('');
+  // Atributos aplicables a la categoría elegida (se re-piden al cambiarla).
+  const [attrDefs, setAttrDefs] = useState<AttributeDefinition[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    const qs = category ? `?categoryId=${category}` : '';
+    fetch(`/v1/stores/${storeId}/attributes/resolved${qs}`)
+      .then((r) => (r.ok ? r.json() : { attributes: [] }))
+      .then((d: { attributes?: AttributeDefinition[] }) => {
+        if (active) setAttrDefs(d.attributes ?? []);
+      })
+      .catch(() => {
+        if (active) setAttrDefs([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [storeId, category]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -177,7 +204,20 @@ function AddItem({
     setLoading(true);
     const form = new FormData(e.currentTarget);
     const price = String(form.get('priceAmount') ?? '').trim();
-    const category = String(form.get('categoryId') ?? '');
+
+    // Junta los valores de atributo, tipados según su definición.
+    const attributes: Record<string, string | number | boolean> = {};
+    for (const def of attrDefs) {
+      const raw = form.get(`attr:${def.key}`);
+      if (def.dataType === 'boolean') {
+        if (raw === 'on') attributes[def.key] = true;
+        continue;
+      }
+      const v = String(raw ?? '').trim();
+      if (!v) continue;
+      attributes[def.key] = def.dataType === 'number' ? Number(v) : v;
+    }
+
     const res = await fetch(`/v1/stores/${storeId}/items`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -189,12 +229,14 @@ function AddItem({
         priceAmount: price || undefined,
         currency: (form.get('currency') as string) || 'USD',
         categoryId: category || undefined,
+        attributes: Object.keys(attributes).length ? attributes : undefined,
         status: 'draft',
       }),
     });
     setLoading(false);
     if (res.ok) {
       (e.target as HTMLFormElement).reset();
+      setCategory('');
       router.refresh();
       return;
     }
@@ -292,7 +334,8 @@ function AddItem({
             id={categoryId}
             name="categoryId"
             className={fieldClass}
-            defaultValue=""
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
           >
             <option value="">Sin categoría</option>
             {categories.map((cat) => (
@@ -304,9 +347,61 @@ function AddItem({
         </div>
       )}
 
+      {attrDefs.length > 0 && (
+        <fieldset className="space-y-3 border-border border-t pt-3">
+          <legend className="text-muted-foreground text-sm">
+            Atributos aplicables
+          </legend>
+          {attrDefs.map((def) => (
+            <AttributeField key={def.id} def={def} />
+          ))}
+        </fieldset>
+      )}
+
       <Button type="submit" disabled={loading}>
         {loading ? 'Creando…' : 'Agregar ítem'}
       </Button>
     </form>
+  );
+}
+
+/** Campo de formulario para un atributo, según su tipo. */
+function AttributeField({ def }: { def: AttributeDefinition }) {
+  const id = useId();
+  const name = `attr:${def.key}`;
+  const label = def.unit ? `${def.label} (${def.unit})` : def.label;
+
+  if (def.dataType === 'boolean') {
+    return (
+      <label className="flex items-center gap-2 text-foreground text-sm">
+        <input type="checkbox" name={name} className="size-4" />
+        {label}
+      </label>
+    );
+  }
+  if (def.dataType === 'enum') {
+    return (
+      <div className="space-y-1.5">
+        <Label htmlFor={id}>{label}</Label>
+        <select id={id} name={name} className={fieldClass} defaultValue="">
+          <option value="">—</option>
+          {(def.options ?? []).map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        id={id}
+        name={name}
+        inputMode={def.dataType === 'number' ? 'decimal' : undefined}
+      />
+    </div>
   );
 }

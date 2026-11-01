@@ -131,4 +131,25 @@ describe('catalog: ítems bajo RLS', () => {
     );
     expect(ok).toBe(true);
   });
+
+  it('los valores de atributo hacen round-trip (jsonb)', async () => {
+    const item = await asUser(CARLOS, (tx) =>
+      createItem(tx, {
+        storeId: FERRETERIA,
+        kind: 'product',
+        slug: 'test-con-attrs',
+        title: 'Con atributos',
+        currency: 'USD',
+        priceMode: 'fixed',
+        status: 'draft',
+        attributes: { marca: 'Bosch', garantia_meses: 12, inalambrico: true },
+      }),
+    );
+    expect(item.attributes).toEqual({
+      marca: 'Bosch',
+      garantia_meses: 12,
+      inalambrico: true,
+    });
+    await asUser(CARLOS, (tx) => deleteItem(tx, FERRETERIA, item.id));
+  });
 });

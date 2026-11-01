@@ -4,6 +4,7 @@ export {
   AttributeDefinitionList,
   AttributeKey,
   AttributeScope,
+  AttributeValues,
   Category,
   CategoryKind,
   CategoryList,

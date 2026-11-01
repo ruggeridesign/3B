@@ -95,6 +95,8 @@ export const items = catalog.table(
     currency: text('currency').notNull().default('USD'),
     priceMode: text('price_mode').notNull().default('fixed'), // fixed | from | quote
     status: text('status').notNull().default('draft'), // draft | published | archived
+    // Valores de atributo del ítem, validados contra las definiciones resueltas.
+    attributes: jsonb('attributes').notNull().default({}),
     publishedAt: timestamp('published_at', { withTimezone: true }),
     ...timestamps,
   },

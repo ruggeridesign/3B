@@ -7,6 +7,7 @@ import {
   requireSession,
   sessionCtx,
 } from '../../../http';
+import { validateAttributeValues } from '../domain/validate-attributes';
 import {
   createGlobalAttribute,
   createStoreAttribute,
@@ -18,6 +19,7 @@ import { createCategory, listCategories } from '../infra/category-repo';
 import {
   createItem,
   deleteItem,
+  getItem,
   listItemsByStore,
   updateItem,
 } from '../infra/item-repo';
@@ -35,6 +37,10 @@ const slug = z
   .min(2)
   .max(60)
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+const attributeValues = z.record(
+  z.string(),
+  z.union([z.string(), z.number(), z.boolean()]),
+);
 const categoryKind = z.enum(['product', 'service', 'both']);
 
 const categoryOut = z
@@ -75,6 +81,7 @@ const itemOut = z
     currency,
     priceMode,
     status,
+    attributes: attributeValues,
     publishedAt: z.string().nullable(),
     createdAt: z.string(),
   })
@@ -93,6 +100,7 @@ const createBody = z
     currency: currency.default('USD'),
     priceMode: priceMode.default('fixed'),
     status: status.default('draft'),
+    attributes: attributeValues.optional(),
   })
   .openapi('CreateItem');
 
@@ -105,6 +113,7 @@ const updateBody = z
     currency: currency.optional(),
     priceMode: priceMode.optional(),
     status: status.optional(),
+    attributes: attributeValues.optional(),
   })
   .openapi('UpdateItem');
 
@@ -295,6 +304,10 @@ export function catalogRouter() {
           description: 'Creado',
           content: { 'application/json': { schema: itemOut } },
         },
+        400: {
+          description: 'Atributos inválidos',
+          content: { 'application/json': { schema: errorSchema } },
+        },
         401: {
           description: 'No autenticado',
           content: { 'application/json': { schema: errorSchema } },
@@ -319,6 +332,11 @@ export function catalogRouter() {
           403,
         );
       }
+      if (body.attributes) {
+        const defs = await resolveAttributes(db, id, body.categoryId ?? null);
+        const errors = validateAttributeValues(defs, body.attributes);
+        if (errors.length) return c.json({ error: errors.join('; ') }, 400);
+      }
       const item = await createItem(db, { storeId: id, ...body });
       return c.json(item, 201);
     },
@@ -339,6 +357,10 @@ export function catalogRouter() {
         200: {
           description: 'Actualizado',
           content: { 'application/json': { schema: itemOut } },
+        },
+        400: {
+          description: 'Atributos inválidos',
+          content: { 'application/json': { schema: errorSchema } },
         },
         401: {
           description: 'No autenticado',
@@ -363,6 +385,16 @@ export function catalogRouter() {
           { error: 'No podés gestionar el catálogo de esta tienda.' },
           403,
         );
+      }
+      if (body.attributes) {
+        // La categoría efectiva: la nueva si se envía, si no la actual del ítem.
+        const current = await getItem(db, id, itemId);
+        if (!current) return c.json({ error: 'No existe ese ítem.' }, 404);
+        const categoryId =
+          body.categoryId !== undefined ? body.categoryId : current.categoryId;
+        const defs = await resolveAttributes(db, id, categoryId);
+        const errors = validateAttributeValues(defs, body.attributes);
+        if (errors.length) return c.json({ error: errors.join('; ') }, 400);
       }
       const item = await updateItem(db, { storeId: id, id: itemId, ...body });
       if (!item) return c.json({ error: 'No existe ese ítem.' }, 404);

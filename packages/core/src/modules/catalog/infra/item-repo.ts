@@ -18,6 +18,7 @@ function toItem(row: ItemRow): Item {
     currency: row.currency,
     priceMode: row.priceMode as Item['priceMode'],
     status: row.status as Item['status'],
+    attributes: (row.attributes as Item['attributes']) ?? {},
     publishedAt: row.publishedAt ? row.publishedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
   };
@@ -62,13 +63,15 @@ export async function createItem(
   db: AppTransaction,
   input: { storeId: string } & CreateItemInput,
 ): Promise<Item> {
+  const attributesJson = JSON.stringify(input.attributes ?? {});
   const rows = (await db.execute(sql`
     INSERT INTO catalog.items
-      (store_id, category_id, kind, slug, title, description, price_amount, currency, price_mode, status, published_at)
+      (store_id, category_id, kind, slug, title, description, price_amount, currency, price_mode, status, attributes, published_at)
     VALUES (
       ${input.storeId}, ${input.categoryId ?? null}, ${input.kind}, ${input.slug},
       ${input.title}, ${input.description ?? null}, ${input.priceAmount ?? null},
       ${input.currency}, ${input.priceMode}, ${input.status},
+      ${attributesJson}::jsonb,
       CASE WHEN ${input.status}::text = 'published' THEN now() ELSE NULL END
     )
     RETURNING id
@@ -90,6 +93,7 @@ export async function updateItem(
   if (input.title !== undefined) set.title = input.title;
   if (input.description !== undefined) set.description = input.description;
   if (input.categoryId !== undefined) set.categoryId = input.categoryId;
+  if (input.attributes !== undefined) set.attributes = input.attributes;
   if (input.priceAmount !== undefined) set.priceAmount = input.priceAmount;
   if (input.currency !== undefined) set.currency = input.currency;
   if (input.priceMode !== undefined) set.priceMode = input.priceMode;

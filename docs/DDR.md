@@ -42,9 +42,10 @@
 - **En curso:** **M2 · Tienda + Catálogo + núcleo de media**, por rebanadas
   verticales siguiendo `data-model.md §7`. HECHAS: **store 1 (alta)**, **2
   (equipo/roles)**, **3 (métodos de pago)**, **núcleo de `media` (backend)**,
-  **catalog 1 (ítems)**, **2a (categorías)** y **2b (atributos: definiciones +
-  herencia)**. Siguiente: **catalog 2c** — capturar/validar **valores** de atributo
-  en los ítems (y variantes); luego wirear **imágenes** (media) a ítems; o KYC.
+  **catalog 1 (ítems)**, **2a (categorías)**, **2b (atributos: definiciones +
+  herencia)** y **2c (valores de atributo en ítems + validación)**. Siguiente:
+  **catalog 2d** — variantes (`item_variants`, ejes desde `variant_axis`); luego
+  wirear **imágenes** (media) a ítems; o KYC.
 - **Localhost demo:** `pnpm db:up` + `pnpm --filter @3b/api dev` (8787) +
   `pnpm --filter @3b/web dev` (3000). Usuarios seed, password `Password123!`
   (carlos@3b.test = Seller con 2 tiendas e ítems; admin@3b.test = superadmin +
@@ -58,7 +59,42 @@
 
 ---
 
-## 2026-10-31 · _(este commit)_ · feat — M2 catalog rebanada 2b: atributos (definiciones + herencia)
+## 2026-11-01 · _(este commit)_ · feat — M2 catalog rebanada 2c: valores de atributo en ítems
+
+- **Qué:** los ítems guardan **valores de atributo** (`items.attributes` jsonb) y
+  el servidor los **valida contra las definiciones resueltas** (global+categoría+
+  tienda) al crear/editar. Web: el formulario de alta pide los atributos aplicables
+  según la categoría elegida (campos tipados: texto/número/opciones/sí-no) y la
+  lista muestra los valores de cada ítem.
+- **Por qué:** cierra el circuito de catalog (categoría → atributos → valores) y
+  deja los ítems descritos con datos tipados; base para filtros (M4).
+- **Impacto / archivos:** `packages/contracts/src/catalog.ts` (`AttributeValues`;
+  `Item.attributes` + en create/update); migración
+  `0011_early_the_captain.sql` (`items.attributes` jsonb, sin RLS propia: hereda la
+  de items); `packages/core/src/modules/catalog/domain/validate-attributes.ts`
+  (validación pura) + su unit test; `item-repo` (guarda/lee attributes);
+  `http/routes.ts` (resuelve defs + valida en alta/edición, 400 si falla);
+  `apps/web/_components/store-catalog.tsx` (campos dinámicos por categoría + fetch
+  de resueltos; muestra valores); `test/integration/catalog.test.ts` (+1 round-trip).
+- **Decisiones de diseño:**
+  - **Validación en el handler (no en la RLS):** se resuelven las definiciones
+    (`resolveAttributes`) para la categoría efectiva (la nueva o la actual del ítem)
+    y se valida la forma/tipo con una función **pura** (`validate-attributes`, capa
+    `domain`, testeable sin DB). Clave desconocida / tipo incorrecto / enum fuera de
+    opciones → **400**. No hay "requerido" (las definiciones no lo modelan aún).
+  - **`attributes` reemplaza** (no hace merge) cuando se envía en una edición.
+  - El valor viaja tipado (`string|number|boolean`) y se guarda en jsonb; la web
+    coacciona el número y el checkbox al armar el payload.
+- **Verificación:** `pnpm check` verde (boundaries 255, +unit 4/4 de validación);
+  integración db 6/6 + **core 38/38** (+1 round-trip jsonb); smoke HTTP 5/5
+  (válido 201 + round-trip, tipo inválido 400, clave desconocida 400).
+- **Estado para retomar:** **2d — variantes** (`item_variants`: sku, axis_values
+  desde los atributos con `variant_axis`, precio/stock opcional). Luego imágenes de
+  ítems (media) y KYC.
+- **Relacionado:** [data-model §catalog](architecture/data-model.md), entradas de
+  catalog 2a/2b.
+
+## 2026-10-31 · `0d4403e` · feat — M2 catalog rebanada 2b: atributos (definiciones + herencia)
 
 - **Qué:** sistema de **definiciones de atributo** con alcance (D-02) y su
   **resolución por herencia**. Tabla `catalog.attribute_definitions`
