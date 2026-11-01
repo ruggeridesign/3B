@@ -3,6 +3,7 @@ import type {
   DiscoveryQuery,
   PublicItem,
   PublicItemVariant,
+  PublicStore,
 } from '@3b/contracts';
 import { type AppTransaction, sql } from '@3b/db';
 
@@ -56,10 +57,11 @@ export async function searchItems(
   db: AppTransaction,
   params: DiscoveryQuery,
 ): Promise<{ items: DiscoveryItem[]; hasMore: boolean }> {
-  const { q, communityId, categoryId, kind, limit, offset } = params;
+  const { q, communityId, storeId, categoryId, kind, limit, offset } = params;
 
   const conds = [sql`i.status = 'published'`];
   if (communityId) conds.push(sql`i.community_id = ${communityId}`);
+  if (storeId) conds.push(sql`i.store_id = ${storeId}`);
   if (categoryId) conds.push(sql`i.category_id = ${categoryId}`);
   if (kind) conds.push(sql`i.kind = ${kind}`);
 
@@ -198,5 +200,72 @@ export async function getPublicItem(
       ? new Date(head.published_at).toISOString()
       : null,
     createdAt: new Date(head.created_at).toISOString(),
+  };
+}
+
+/**
+ * Ficha pública de una tienda (o null si no es visible). Cabecera + horario +
+ * ítems publicados (reusa `searchItems` filtrando por tienda). La RLS acota todo.
+ */
+export async function getPublicStore(
+  db: AppTransaction,
+  id: string,
+): Promise<PublicStore | null> {
+  const headRows = (await db.execute(sql`
+    SELECT s.id, s.name, s.slug, s.kind,
+           (s.verification_level = 'verified') AS verified,
+           s.community_id, c.name AS community_name
+    FROM store.stores s
+    LEFT JOIN community.communities c ON c.id = s.community_id
+    WHERE s.id = ${id}
+    LIMIT 1
+  `)) as unknown as Array<{
+    id: string;
+    name: string;
+    slug: string;
+    kind: string;
+    verified: boolean;
+    community_id: string;
+    community_name: string | null;
+  }>;
+  const head = headRows[0];
+  if (!head) return null;
+
+  const { items } = await searchItems(db, {
+    storeId: id,
+    limit: 50,
+    offset: 0,
+  });
+
+  const hourRows = (await db.execute(sql`
+    SELECT id, weekday, opens_min, closes_min, created_at
+    FROM store.store_hours
+    WHERE store_id = ${id}
+    ORDER BY weekday, opens_min
+  `)) as unknown as Array<{
+    id: string;
+    weekday: number;
+    opens_min: number;
+    closes_min: number;
+    created_at: string | Date;
+  }>;
+
+  return {
+    id: head.id,
+    name: head.name,
+    slug: head.slug,
+    kind: head.kind as PublicStore['kind'],
+    verified: head.verified,
+    communityId: head.community_id,
+    communityName: head.community_name,
+    hours: hourRows.map((h) => ({
+      id: h.id,
+      storeId: id,
+      weekday: h.weekday,
+      opensMin: h.opens_min,
+      closesMin: h.closes_min,
+      createdAt: new Date(h.created_at).toISOString(),
+    })),
+    items,
   };
 }

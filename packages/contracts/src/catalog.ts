@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Uuid } from './store';
+import { StoreHour, StoreKind, Uuid } from './store';
 
 /**
  * Contratos del módulo `catalog`. Rebanada 1: **ítems**. Rebanada 2:
@@ -412,9 +412,27 @@ export type PublicItem = z.infer<typeof PublicItem>;
 export const DiscoveryQuery = z.object({
   q: z.string().max(120).optional(),
   communityId: Uuid.optional(),
+  storeId: Uuid.optional(),
   categoryId: Uuid.optional(),
   kind: ItemKind.optional(),
   limit: z.number().int().min(1).max(50).default(20),
   offset: z.number().int().min(0).default(0),
 });
 export type DiscoveryQuery = z.infer<typeof DiscoveryQuery>;
+
+/**
+ * Ficha pública de una tienda (storefront): cabecera + horario + ítems publicados.
+ * Solo accesible si la tienda es visible (miembro o comunidad visible).
+ */
+export const PublicStore = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  kind: StoreKind,
+  verified: z.boolean(),
+  communityId: z.string(),
+  communityName: z.string().nullable(),
+  hours: z.array(StoreHour),
+  items: z.array(DiscoveryItem),
+});
+export type PublicStore = z.infer<typeof PublicStore>;

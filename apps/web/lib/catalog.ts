@@ -6,6 +6,7 @@ import type {
   ItemVariant,
   Media,
   PublicItem,
+  PublicStore,
   ServiceDetail,
   StockLevel,
 } from '@3b/contracts';
@@ -56,6 +57,22 @@ export async function getPublicItem(id: string): Promise<PublicItem | null> {
     });
     if (!res.ok) return null;
     return (await res.json()) as PublicItem;
+  } catch {
+    return null;
+  }
+}
+
+/** Ficha pública de una tienda (storefront). null si no es visible o falla. */
+export async function getPublicStore(id: string): Promise<PublicStore | null> {
+  const cookie = await cookieHeader();
+  if (!cookie) return null;
+  try {
+    const res = await fetch(`${API}/v1/discovery/stores/${id}`, {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as PublicStore;
   } catch {
     return null;
   }

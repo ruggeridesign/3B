@@ -34,6 +34,7 @@ export {
   PriceMode,
   PublicItem,
   PublicItemVariant,
+  PublicStore,
   ServiceDetail,
   ServiceModality,
   Sku,

@@ -47,7 +47,12 @@ export default async function ItemFicha({
         </Link>
         <h1 className="font-bold text-2xl text-foreground">{it.title}</h1>
         <p className="text-muted-foreground text-sm">
-          {it.storeName}
+          <Link
+            href={`/comprar/tienda/${it.storeId}`}
+            className="text-foreground hover:underline"
+          >
+            {it.storeName}
+          </Link>
           {it.storeVerified && (
             <span className="ml-2 rounded-md bg-seller/20 px-1.5 py-0.5 text-foreground text-xs">
               Verificada

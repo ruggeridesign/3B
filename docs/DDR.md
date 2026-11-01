@@ -56,9 +56,12 @@
     servicio). Policies de descubrimiento: **imágenes** (`media_select_item`) y
     **disponibilidad** (`stock_levels_select_public`) visibles a quien ve el ítem
     (antes stock era solo-miembros). Página `/comprar/[id]`; el feed enlaza a ella.
-    **Difieren**: filtros por atributo (`item_attr_index`), ficha de **tienda**
-    (storefront), comunidades **vecinas** (`community_links`) y `ranking.item_scores`.
-  - Siguiente: **M4 r3** (filtros por atributo / vecinas / ranking) o **M5 pedidos**
+  - **M4 r3 — ficha pública de tienda (storefront)**: `GET /v1/discovery/stores/{id}`
+    (cabecera + verificada + horario + ítems publicados; reusa `searchItems` con
+    filtro `storeId`). Página `/comprar/tienda/[id]`; la ficha de ítem enlaza al
+    storefront. **Difieren**: filtros por atributo (`item_attr_index`), comunidades
+    **vecinas** (`community_links`) y `ranking.item_scores`.
+  - Siguiente: **M4 r4** (filtros por atributo / vecinas / ranking) o **M5 pedidos**
     (carrito/checkout; trae las **reservas** de stock y enciende worker+Valkey).
 - **M2 (cerrado) · Tienda + Catálogo + núcleo de media**, por rebanadas
   verticales siguiendo `data-model.md §7`. HECHAS: **store 1 (alta)**, **2
@@ -89,7 +92,37 @@
 
 ---
 
-## 2026-11-01 · _(este commit)_ · feat — M4 rebanada 2: ficha pública de ítem
+## 2026-11-01 · _(este commit)_ · feat — M4 rebanada 3: ficha pública de tienda (storefront)
+
+- **Qué:** storefront público. `GET /v1/discovery/stores/{id}` devuelve la tienda
+  (nombre/slug/tipo/**verificada**/comunidad) + **horario** + **ítems publicados**.
+  Se agregó el filtro `storeId` a `searchItems` (y a `DiscoveryQuery`) y se reusa
+  para traer los ítems de la tienda. Web: página `/comprar/tienda/[id]` (cabecera +
+  horario por día + grilla de ítems que enlazan a la ficha); la ficha de ítem ahora
+  enlaza al storefront por el nombre de la tienda. 404 si no es visible.
+- **Por qué:** completa "ver ítems/tiendas" del salida de M4 — el comprador llega a
+  la vitrina de una tienda desde un ítem o el feed.
+- **Impacto / archivos:** `packages/contracts/src/catalog.ts` (`PublicStore` +
+  `storeId` en `DiscoveryQuery`; importa `StoreHour`/`StoreKind`) + exports;
+  `packages/core/src/modules/catalog` (`discovery-repo` `getPublicStore` + filtro
+  `storeId` en `searchItems`; `discovery-routes` ruta + schema; exports); `apps/web`
+  (`lib/catalog` getPublicStore, página `comprar/tienda/[id]`, enlace en la ficha de
+  ítem); `packages/core/test/integration/public-store.test.ts`. Sin migración.
+- **Decisiones de diseño:**
+  - **Reusa `searchItems({storeId})`** para los ítems del storefront (mismo filtro
+    `status='published'` + RLS): una sola fuente de verdad para "ítems visibles".
+  - **Horario público** ya existía (M2 r4: `store_hours_select` deriva del store);
+    el storefront lo expone tal cual a compradores. Verificada = `verification_level`.
+  - **404 por RLS** (store no visible → `getPublicStore` null), sin filtrar existencia.
+- **Verificación:** `pnpm check` verde (boundaries 317 módulos, unit 9/9);
+  integración db 6/6 + **core 63/63** (+2 storefront: tienda con publicados (sin
+  borradores) y verificada; horario presente); smoke HTTP 6/6 (verificada, solo
+  publicados, horario, 404).
+- **Estado para retomar:** falta de M4: **filtros por atributo** (`item_attr_index`),
+  **vecinas** (`community_links`) y `ranking`. Luego **M5 pedidos**.
+- **Relacionado:** ROADMAP M4, entradas de M4 r1/r2, store r4 (horarios), KYC (verificada).
+
+## 2026-11-01 · `abb02ca` · feat — M4 rebanada 2: ficha pública de ítem
 
 - **Qué:** ficha pública de un ítem para el comprador. `GET /v1/discovery/items/{id}`
   devuelve el ítem + **tienda** (nombre/slug/verificada) + **comunidad** + **imágenes**

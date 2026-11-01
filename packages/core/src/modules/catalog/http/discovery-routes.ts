@@ -1,6 +1,10 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import { type ApiVariables, requireSession, sessionCtx } from '../../../http';
-import { getPublicItem, searchItems } from '../infra/discovery-repo';
+import {
+  getPublicItem,
+  getPublicStore,
+  searchItems,
+} from '../infra/discovery-repo';
 
 /** Opciones del router de descubrimiento (config inyectada desde la app). */
 export interface DiscoveryRouterOptions {
@@ -85,6 +89,29 @@ const publicItemOut = z
   })
   .openapi('PublicItem');
 
+const storeKind = z.enum(['products', 'services']);
+const hourOut = z.object({
+  id: z.string(),
+  storeId: z.string(),
+  weekday: z.number().int(),
+  opensMin: z.number().int(),
+  closesMin: z.number().int(),
+  createdAt: z.string(),
+});
+const publicStoreOut = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    slug: z.string(),
+    kind: storeKind,
+    verified: z.boolean(),
+    communityId: z.string(),
+    communityName: z.string().nullable(),
+    hours: z.array(hourOut),
+    items: z.array(discoveryItemOut),
+  })
+  .openapi('PublicStore');
+
 const itemIdParam = z.object({
   id: z.string().openapi({ param: { name: 'id', in: 'path' } }),
 });
@@ -93,6 +120,7 @@ const itemIdParam = z.object({
 const discoveryQuery = z.object({
   q: z.string().max(120).optional(),
   communityId: uuid.optional(),
+  storeId: uuid.optional(),
   categoryId: uuid.optional(),
   kind: kind.optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
@@ -166,6 +194,38 @@ export function discoveryRouter({ mediaPublicUrl }: DiscoveryRouterOptions) {
       const item = await getPublicItem(db, id, mediaPublicUrl);
       if (!item) return c.json({ error: 'No existe ese ítem.' }, 404);
       return c.json(item, 200);
+    },
+  );
+
+  // Ficha pública de una tienda (storefront): cabecera + horario + publicados.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/discovery/stores/{id}',
+      tags: ['discovery'],
+      summary: 'Ficha pública de una tienda',
+      request: { params: itemIdParam },
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: publicStoreOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'No existe o no es visible',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      const store = await getPublicStore(db, id);
+      if (!store) return c.json({ error: 'No existe esa tienda.' }, 404);
+      return c.json(store, 200);
     },
   );
 

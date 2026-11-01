@@ -26,7 +26,11 @@ export {
   removeCollectionItem,
   updateCollection,
 } from './infra/collection-repo';
-export { getPublicItem, searchItems } from './infra/discovery-repo';
+export {
+  getPublicItem,
+  getPublicStore,
+  searchItems,
+} from './infra/discovery-repo';
 export {
   createItem,
   deleteItem,
