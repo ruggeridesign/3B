@@ -5,6 +5,7 @@ import {
   jsonb,
   numeric,
   pgSchema,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -150,3 +151,47 @@ export const serviceDetails = catalog.table('service_details', {
   notes: text('notes'),
   ...timestamps,
 });
+
+/**
+ * Colección (vitrina) de una tienda: agrupa ítems bajo un título, con `position`
+ * para ordenar las colecciones entre sí. La RLS se deriva del store padre (se ve
+ * si se ve la tienda); gestionar = owner/admin/catalog.
+ */
+export const collections = catalog.table(
+  'collections',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    position: integer('position').notNull().default(0),
+    ...timestamps,
+  },
+  (t) => [
+    index('collections_store_idx').on(t.storeId),
+    unique('collections_store_title_unique').on(t.storeId, t.title),
+  ],
+);
+
+/**
+ * Pertenencia de un ítem a una colección (M:N), con `position` para ordenar los
+ * ítems dentro de la colección. La RLS se deriva de la colección padre.
+ */
+export const collectionItems = catalog.table(
+  'collection_items',
+  {
+    collectionId: uuid('collection_id')
+      .notNull()
+      .references(() => collections.id, { onDelete: 'cascade' }),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull().default(0),
+    ...timestamps,
+  },
+  (t) => [
+    primaryKey({ columns: [t.collectionId, t.itemId] }),
+    index('collection_items_item_idx').on(t.itemId),
+  ],
+);

@@ -17,6 +17,15 @@ import {
 } from '../infra/attribute-repo';
 import { createCategory, listCategories } from '../infra/category-repo';
 import {
+  addCollectionItem,
+  createCollection,
+  deleteCollection,
+  getCollection,
+  listCollections,
+  removeCollectionItem,
+  updateCollection,
+} from '../infra/collection-repo';
+import {
   createItem,
   deleteItem,
   getItem,
@@ -214,6 +223,58 @@ const upsertServiceDetailBody = z
     notes: z.string().max(2000).nullable().optional(),
   })
   .openapi('UpsertServiceDetail');
+
+// ----- Colecciones (vitrina) -----
+const position = z.number().int().min(0).max(100000);
+
+const collectionItemRefOut = z
+  .object({ itemId: z.string(), position: z.number().int() })
+  .openapi('CollectionItemRef');
+
+const collectionOut = z
+  .object({
+    id: z.string(),
+    storeId: z.string(),
+    title: z.string(),
+    position: z.number().int(),
+    items: z.array(collectionItemRefOut),
+    createdAt: z.string(),
+  })
+  .openapi('Collection');
+
+const collectionListOut = z
+  .object({ collections: z.array(collectionOut) })
+  .openapi('CollectionList');
+
+const createCollectionBody = z
+  .object({ title: z.string().min(2).max(80), position: position.optional() })
+  .openapi('CreateCollection');
+
+const updateCollectionBody = z
+  .object({
+    title: z.string().min(2).max(80).optional(),
+    position: position.optional(),
+  })
+  .openapi('UpdateCollection');
+
+const addCollectionItemBody = z
+  .object({ itemId: uuid, position: position.optional() })
+  .openapi('AddCollectionItem');
+
+const collectionParam = z.object({
+  id: z.string().openapi({ param: { name: 'id', in: 'path' } }),
+  collectionId: z
+    .string()
+    .openapi({ param: { name: 'collectionId', in: 'path' } }),
+});
+
+const collectionItemParam = z.object({
+  id: z.string().openapi({ param: { name: 'id', in: 'path' } }),
+  collectionId: z
+    .string()
+    .openapi({ param: { name: 'collectionId', in: 'path' } }),
+  itemId: z.string().openapi({ param: { name: 'itemId', in: 'path' } }),
+});
 
 // ----- Atributos -----
 const attrScope = z.enum(['global', 'category', 'store']);
@@ -849,6 +910,274 @@ export function catalogRouter() {
       const existed = await deleteServiceDetail(db, itemId);
       if (!existed) {
         return c.json({ error: 'No tiene detalle de servicio.' }, 404);
+      }
+      return c.body(null, 204);
+    },
+  );
+
+  // ===== Colecciones (vitrina) =====
+
+  // Listar colecciones de una tienda (con sus ítems embebidos). La RLS acota:
+  // visibles para quien ve la tienda; las pertenencias, para quien ve cada ítem.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/stores/{id}/collections',
+      tags: ['catalog'],
+      summary: 'Colecciones de la tienda',
+      request: { params: storeParam },
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: collectionListOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      const collections = await listCollections(db, id);
+      return c.json({ collections }, 200);
+    },
+  );
+
+  // Crear una colección. Solo owner/admin/catalog. Título repetido → 409.
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/stores/{id}/collections',
+      tags: ['catalog'],
+      summary: 'Crear una colección',
+      request: {
+        params: storeParam,
+        body: {
+          content: { 'application/json': { schema: createCollectionBody } },
+        },
+      },
+      responses: {
+        201: {
+          description: 'Creada',
+          content: { 'application/json': { schema: collectionOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No podés gestionar el catálogo de esta tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        409: {
+          description: 'Título repetido en la tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      const body = c.req.valid('json');
+      if (!(await canManageCatalog(db, id))) {
+        return c.json(
+          { error: 'No podés gestionar el catálogo de esta tienda.' },
+          403,
+        );
+      }
+      const collection = await createCollection(db, { storeId: id, ...body });
+      return c.json(collection, 201);
+    },
+  );
+
+  // Editar una colección (título/orden). Solo owner/admin/catalog.
+  app.openapi(
+    createRoute({
+      method: 'patch',
+      path: '/stores/{id}/collections/{collectionId}',
+      tags: ['catalog'],
+      summary: 'Editar una colección',
+      request: {
+        params: collectionParam,
+        body: {
+          content: { 'application/json': { schema: updateCollectionBody } },
+        },
+      },
+      responses: {
+        200: {
+          description: 'Actualizada',
+          content: { 'application/json': { schema: collectionOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No podés gestionar el catálogo de esta tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'No existe esa colección',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id, collectionId } = c.req.valid('param');
+      const body = c.req.valid('json');
+      if (!(await canManageCatalog(db, id))) {
+        return c.json(
+          { error: 'No podés gestionar el catálogo de esta tienda.' },
+          403,
+        );
+      }
+      const collection = await updateCollection(db, id, collectionId, body);
+      if (!collection) {
+        return c.json({ error: 'No existe esa colección.' }, 404);
+      }
+      return c.json(collection, 200);
+    },
+  );
+
+  // Borrar una colección (sus pertenencias caen en cascada). Owner/admin/catalog.
+  app.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/stores/{id}/collections/{collectionId}',
+      tags: ['catalog'],
+      summary: 'Borrar una colección',
+      request: { params: collectionParam },
+      responses: {
+        204: { description: 'Borrada' },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No podés gestionar el catálogo de esta tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'No existe esa colección',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id, collectionId } = c.req.valid('param');
+      if (!(await canManageCatalog(db, id))) {
+        return c.json(
+          { error: 'No podés gestionar el catálogo de esta tienda.' },
+          403,
+        );
+      }
+      const existed = await deleteCollection(db, id, collectionId);
+      if (!existed) return c.json({ error: 'No existe esa colección.' }, 404);
+      return c.body(null, 204);
+    },
+  );
+
+  // Agregar un ítem a una colección (debe ser de la misma tienda). El ítem ya
+  // presente → 409. Owner/admin/catalog.
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/stores/{id}/collections/{collectionId}/items',
+      tags: ['catalog'],
+      summary: 'Agregar un ítem a una colección',
+      request: {
+        params: collectionParam,
+        body: {
+          content: { 'application/json': { schema: addCollectionItemBody } },
+        },
+      },
+      responses: {
+        201: {
+          description: 'Agregado',
+          content: { 'application/json': { schema: collectionItemRefOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No podés gestionar el catálogo de esta tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'No existe esa colección o ese ítem en la tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        409: {
+          description: 'El ítem ya está en la colección',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id, collectionId } = c.req.valid('param');
+      const body = c.req.valid('json');
+      if (!(await canManageCatalog(db, id))) {
+        return c.json(
+          { error: 'No podés gestionar el catálogo de esta tienda.' },
+          403,
+        );
+      }
+      const collection = await getCollection(db, id, collectionId);
+      if (!collection) {
+        return c.json({ error: 'No existe esa colección.' }, 404);
+      }
+      // El ítem debe pertenecer a la misma tienda que la colección.
+      const item = await getItem(db, id, body.itemId);
+      if (!item) {
+        return c.json({ error: 'No existe ese ítem en la tienda.' }, 404);
+      }
+      const ref = await addCollectionItem(db, collectionId, body);
+      return c.json(ref, 201);
+    },
+  );
+
+  // Quitar un ítem de una colección. Owner/admin/catalog.
+  app.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/stores/{id}/collections/{collectionId}/items/{itemId}',
+      tags: ['catalog'],
+      summary: 'Quitar un ítem de una colección',
+      request: { params: collectionItemParam },
+      responses: {
+        204: { description: 'Quitado' },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No podés gestionar el catálogo de esta tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'El ítem no está en la colección',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id, collectionId, itemId } = c.req.valid('param');
+      if (!(await canManageCatalog(db, id))) {
+        return c.json(
+          { error: 'No podés gestionar el catálogo de esta tienda.' },
+          403,
+        );
+      }
+      const existed = await removeCollectionItem(db, collectionId, itemId);
+      if (!existed) {
+        return c.json({ error: 'El ítem no está en la colección.' }, 404);
       }
       return c.body(null, 204);
     },

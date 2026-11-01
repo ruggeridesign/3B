@@ -4,6 +4,7 @@ import {
   getCategories,
   getResolvedAttributes,
   getStoreAttributes,
+  getStoreCollections,
 } from '../../../../lib/catalog';
 import { getMe } from '../../../../lib/me';
 import {
@@ -15,6 +16,7 @@ import {
 } from '../../../../lib/stores';
 import { StoreAttributes } from '../../../_components/store-attributes';
 import { StoreCatalog } from '../../../_components/store-catalog';
+import { StoreCollections } from '../../../_components/store-collections';
 import { StoreHours } from '../../../_components/store-hours';
 import { StorePayments } from '../../../_components/store-payments';
 import { StoreTeam } from '../../../_components/store-team';
@@ -59,6 +61,7 @@ export default async function StoreDetail({
     categories,
     ownAttrs,
     resolvedAttrs,
+    collections,
   ] = await Promise.all([
     getStoreMembers(id),
     getPaymentMethods(id),
@@ -67,6 +70,7 @@ export default async function StoreDetail({
     getCategories(),
     canManageCatalog ? getStoreAttributes(id) : Promise.resolve([]),
     canManageCatalog ? getResolvedAttributes(id) : Promise.resolve([]),
+    getStoreCollections(id),
   ]);
 
   return (
@@ -103,6 +107,13 @@ export default async function StoreDetail({
           resolved={resolvedAttrs}
         />
       )}
+
+      <StoreCollections
+        storeId={store.id}
+        collections={collections}
+        items={items}
+        canManage={canManageCatalog}
+      />
 
       <StoreHours storeId={store.id} hours={hours} canManage={canManage} />
 

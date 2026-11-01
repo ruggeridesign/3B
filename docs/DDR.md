@@ -44,14 +44,17 @@
   (equipo/roles)**, **3 (métodos de pago)**, **4 (horarios)**, **núcleo de `media`
   (backend)**, **catalog 1 (ítems)**, **2a (categorías)**, **2b (atributos:
   definiciones + herencia)**, **2c (valores de atributo en ítems)**, **2d
-  (variantes)** y **2e (detalle de servicio)**. Catalog queda con su núcleo completo
-  (taxonomía, atributos, ítems con valores, variantes, detalle de servicio) **+
-  página de detalle de ítem con imágenes (media), editor de variantes y detalle de
-  servicio**; store suma **horario semanal** en su página de detalle. Trabajo
-  autónomo en curso contra el mapa de datos de `.docs`
-  (`3B_diccionario_de_objetos.md`, 62 entidades/14 dominios): se avanza fase por
-  fase creando todos los objetos. Diseño visual: **se difiere** (habrá un skill de
-  UI). Siguiente: `collections`/`collection_items` (vitrina), **KYC**, y **M3
+  (variantes)**, **2e (detalle de servicio)** y **2f (colecciones/vitrina)**. Catalog
+  queda con su núcleo completo (taxonomía, atributos, ítems con valores, variantes,
+  detalle de servicio, colecciones) **+ página de detalle de ítem con imágenes
+  (media), editor de variantes y detalle de servicio**; store suma **horario
+  semanal** y la página de tienda suma **colecciones**. Trabajo autónomo en curso
+  contra el mapa de datos de `.docs` (`3B_diccionario_de_objetos.md`, 62
+  entidades/14 dominios): se avanza fase por fase creando todos los objetos. Diseño
+  visual: **se difiere** (habrá un skill de UI). Quedan del mapa M2: `templates`
+  (plantillas de atributos), `item_attr_index` (proyección de búsqueda, va con M4) y
+  los de Fase 2 (`changesets`). Siguiente sugerido: **KYC**
+  (`identity.kyc_submissions` + `stores.verification_level`), y luego **M3
   inventario** / **M4 descubrimiento** / **M5 pedidos**.
 - **Localhost demo:** `pnpm db:up` + `pnpm --filter @3b/api dev` (8787) +
   `pnpm --filter @3b/web dev` (3000). Usuarios seed, password `Password123!`
@@ -66,7 +69,66 @@
 
 ---
 
-## 2026-11-01 · _(este commit)_ · feat — M2 store rebanada 4: horarios (disponibilidad semanal)
+## 2026-11-01 · _(este commit)_ · feat — M2 catalog rebanada 2f: colecciones (vitrina)
+
+- **Qué:** **colecciones** (vitrina) de una tienda: `catalog.collections` (título +
+  `position`) y la M:N ordenada `catalog.collection_items` (collection_id, item_id,
+  `position`). CRUD anidado `GET/POST /v1/stores/{id}/collections`, `PATCH/DELETE
+  .../{collectionId}`, y pertenencias `POST .../{collectionId}/items` +
+  `DELETE .../items/{itemId}`. El GET devuelve cada colección con sus ítems ya
+  embebidos y ordenados. Web: sección **Colecciones** en `/mi-tienda/[id]` (crear,
+  borrar, agregar ítems del catálogo, quitar). Seed: la ferretería trae "Destacados"
+  con sus 2 productos.
+- **Por qué:** cierra el objeto `collections`/`collection_items` del mapa de `.docs`
+  y da la vitrina que agrupa ítems para el descubrimiento (M4) y la ficha de tienda.
+- **Impacto / archivos:** `packages/contracts/src/catalog.ts` (`CollectionItemRef`/
+  `Collection`/`CollectionList`/`CreateCollectionInput`/`UpdateCollectionInput`/
+  `AddCollectionItemInput`) + exports; `packages/db/src/schema/catalog.ts`
+  (`collections` + `collectionItems`) + migración `0015_heavy_black_panther.sql`
+  (2 tablas **+ RLS en capas + grants**); `packages/db/src/index.ts` (re-exporta
+  `inArray`); `packages/db/src/seed.ts` ("Destacados" + resumen con `colecciones=`);
+  `packages/core/src/modules/catalog/infra/collection-repo.ts` (list con ítems
+  embebidos, get, create/update/delete, add/remove ítem) + router (6 rutas) +
+  exports; `apps/web` (`lib/catalog` getStoreCollections, componente
+  `store-collections`, wiring en la página de tienda);
+  `packages/core/test/integration/collection.test.ts`.
+- **Decisiones de diseño:**
+  - **RLS en dos niveles, derivada del padre** (como variantes/horarios):
+    `collections` se ve si se ve el store (`EXISTS store.stores` → pública a la
+    comunidad); se gestiona con owner/admin/**catalog**. `collection_items` se ve si
+    se ve **su colección Y su ítem** (doble `EXISTS`): así la vitrina de un comprador
+    **no filtra ni muestra ítems en borrador** (cada subconsulta queda sujeta a su
+    propia RLS). Gestionar pertenencias = catalog-manager de la tienda de la
+    colección.
+  - **Ítem debe ser de la misma tienda:** la RLS de insert solo exige gestionar la
+    colección; el handler además resuelve el ítem con `getItem(storeId, itemId)` y
+    responde **404** si no pertenece a esa tienda (evita mezclar catálogos de dos
+    tiendas que el mismo usuario administre).
+  - **Listado con ítems embebidos (sin N+1):** `listCollections` hace 2 consultas
+    (colecciones + sus pertenencias con `inArray`) y agrupa en memoria; se re-exporta
+    `inArray` desde `@3b/db` (misma instancia de Drizzle en el workspace).
+  - **`title` único por tienda** (`UNIQUE(store_id, title)` → 409) en vez de slug: el
+    mapa de `.docs` lista solo "título, orden"; el slug para URLs se puede agregar
+    después si M4 lo pide. Editar un tramo de orden = `PATCH position`.
+  - **Borrado en cascada:** borrar una colección arrastra sus `collection_items`
+    (FK `ON DELETE cascade`); borrar un ítem lo quita de todas sus colecciones.
+- **Verificación:** `pnpm check` verde (boundaries 287 módulos, unit 5/5);
+  integración db 6/6 + **core 47/47** (+3 de colecciones: owner crea+agrega+lista
+  ordenado, un par de comunidad ve la colección pero **solo los ítems publicados**,
+  sales bloqueado por RLS al crear/agregar, quitar/borrar); smoke HTTP 12/12 (seed
+  2 ítems, alta 201, título repetido 409, ítem de la tienda 201, ítem repetido 409,
+  ítem de otra tienda 404, quitar 204→404, borrar 204→404).
+- **Estado para retomar:** catalog con taxonomía/atributos/ítems/variantes/servicio/
+  **colecciones**. Del mapa M2 quedan `templates` (plantillas de atributos) y
+  `item_attr_index` (va con la búsqueda de M4). Siguiente sugerido: **KYC**
+  (`identity.kyc_submissions` + `stores.verification_level` + flujo de revisión por
+  admin de comunidad, ya usable con `media`); luego **M3 inventario**.
+- **Relacionado:** [diccionario de objetos](../.docs/3B_diccionario_de_objetos.md)
+  (local, §catalog `collections`/`collection_items`),
+  [data-model §catalog](architecture/data-model.md), entradas de catalog 2d
+  (variantes) y store 4 (horarios), mismo patrón de RLS derivada del padre.
+
+## 2026-11-01 · `b5d1c06` · feat — M2 store rebanada 4: horarios (disponibilidad semanal)
 
 - **Qué:** **horario semanal** de una tienda (`store.store_hours`) modelado como
   **intervalos de apertura**: cada fila es un tramo (`opens_min`→`closes_min`,

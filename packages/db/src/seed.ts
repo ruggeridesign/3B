@@ -360,8 +360,35 @@ async function main() {
     ])
     .onConflictDoNothing();
 
+  // Colección (vitrina) de la ferretería con sus productos destacados.
+  const COL_DESTACADOS = '77777777-7777-7777-7777-777777777701';
+  await db
+    .insert(schema.collections)
+    .values({
+      id: COL_DESTACADOS,
+      storeId: S_FERRETERIA,
+      title: 'Destacados',
+      position: 0,
+    })
+    .onConflictDoNothing();
+  await db
+    .insert(schema.collectionItems)
+    .values([
+      {
+        collectionId: COL_DESTACADOS,
+        itemId: '44444444-4444-4444-4444-444444444401',
+        position: 0,
+      },
+      {
+        collectionId: COL_DESTACADOS,
+        itemId: '44444444-4444-4444-4444-444444444402',
+        position: 1,
+      },
+    ])
+    .onConflictDoNothing();
+
   // Resumen
-  const [[c], [u], [s], [m], [i], [v], [sd], [h]] = await Promise.all([
+  const [[c], [u], [s], [m], [i], [v], [sd], [h], [col]] = await Promise.all([
     sql`select count(*)::int as n from community.communities`,
     sql`select count(*)::int as n from identity.users`,
     sql`select count(*)::int as n from store.stores`,
@@ -370,9 +397,10 @@ async function main() {
     sql`select count(*)::int as n from catalog.item_variants`,
     sql`select count(*)::int as n from catalog.service_details`,
     sql`select count(*)::int as n from store.store_hours`,
+    sql`select count(*)::int as n from catalog.collections`,
   ]);
   console.log(
-    `[seed] comunidades=${c.n} usuarios=${u.n} tiendas=${s.n} membresías=${m.n} ítems=${i.n} variantes=${v.n} servicios=${sd.n} horarios=${h.n}`,
+    `[seed] comunidades=${c.n} usuarios=${u.n} tiendas=${s.n} membresías=${m.n} ítems=${i.n} variantes=${v.n} servicios=${sd.n} horarios=${h.n} colecciones=${col.n}`,
   );
 
   await sql.end();

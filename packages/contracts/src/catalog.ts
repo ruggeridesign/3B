@@ -278,3 +278,51 @@ export const UpsertServiceDetailInput = z.object({
   notes: z.string().max(2000).nullable().optional(),
 });
 export type UpsertServiceDetailInput = z.infer<typeof UpsertServiceDetailInput>;
+
+// ===== Colecciones (vitrina) =====
+
+/** Referencia a un ítem dentro de una colección, con su posición (orden). */
+export const CollectionItemRef = z.object({
+  itemId: z.string(),
+  position: z.number().int(),
+});
+export type CollectionItemRef = z.infer<typeof CollectionItemRef>;
+
+/**
+ * Una colección (vitrina) de una tienda: agrupa ítems en un orden. `position`
+ * ordena las colecciones entre sí; `items` trae las referencias ya ordenadas.
+ */
+export const Collection = z.object({
+  id: z.string(),
+  storeId: z.string(),
+  title: z.string(),
+  position: z.number().int(),
+  items: z.array(CollectionItemRef),
+  createdAt: z.string(),
+});
+export type Collection = z.infer<typeof Collection>;
+
+/** Lista de colecciones de una tienda. */
+export const CollectionList = z.object({ collections: z.array(Collection) });
+export type CollectionList = z.infer<typeof CollectionList>;
+
+/** Alta de una colección. `position` opcional (default 0). */
+export const CreateCollectionInput = z.object({
+  title: z.string().min(2).max(80),
+  position: z.number().int().min(0).max(100000).optional(),
+});
+export type CreateCollectionInput = z.infer<typeof CreateCollectionInput>;
+
+/** Edición parcial de una colección. */
+export const UpdateCollectionInput = z.object({
+  title: z.string().min(2).max(80).optional(),
+  position: z.number().int().min(0).max(100000).optional(),
+});
+export type UpdateCollectionInput = z.infer<typeof UpdateCollectionInput>;
+
+/** Agregar un ítem a una colección (debe ser de la misma tienda). */
+export const AddCollectionItemInput = z.object({
+  itemId: Uuid,
+  position: z.number().int().min(0).max(100000).optional(),
+});
+export type AddCollectionItemInput = z.infer<typeof AddCollectionItemInput>;

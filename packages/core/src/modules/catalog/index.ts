@@ -14,6 +14,15 @@ export {
   listCategories,
 } from './infra/category-repo';
 export {
+  addCollectionItem,
+  createCollection,
+  deleteCollection,
+  getCollection,
+  listCollections,
+  removeCollectionItem,
+  updateCollection,
+} from './infra/collection-repo';
+export {
   createItem,
   deleteItem,
   getItem,

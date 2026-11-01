@@ -1,6 +1,7 @@
 import type {
   AttributeDefinition,
   Category,
+  Collection,
   ItemVariant,
   Media,
   ServiceDetail,
@@ -81,6 +82,25 @@ export async function getItemVariants(
     if (!res.ok) return [];
     const data = (await res.json()) as { variants: ItemVariant[] };
     return data.variants;
+  } catch {
+    return [];
+  }
+}
+
+/** Colecciones (vitrina) de una tienda, con sus ítems. [] si falla. */
+export async function getStoreCollections(
+  storeId: string,
+): Promise<Collection[]> {
+  const cookie = await cookieHeader();
+  if (!cookie) return [];
+  try {
+    const res = await fetch(`${API}/v1/stores/${storeId}/collections`, {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { collections: Collection[] };
+    return data.collections;
   } catch {
     return [];
   }
