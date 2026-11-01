@@ -1,5 +1,7 @@
+import { sql } from 'drizzle-orm';
 import {
   boolean,
+  customType,
   index,
   integer,
   jsonb,
@@ -16,6 +18,13 @@ import { communities } from './community';
 import { stores } from './store';
 
 // Esquema `catalog`: productos/servicios de las tiendas (items) + taxonomía.
+
+/** Tipo `tsvector` de Postgres (búsqueda de texto). Solo se lee/consulta. */
+const tsvector = customType<{ data: string }>({
+  dataType() {
+    return 'tsvector';
+  },
+});
 export const catalog = pgSchema('catalog');
 
 /**
@@ -126,12 +135,18 @@ export const items = catalog.table(
     // Valores de atributo del ítem, validados contra las definiciones resueltas.
     attributes: jsonb('attributes').notNull().default({}),
     publishedAt: timestamp('published_at', { withTimezone: true }),
+    // Vector de búsqueda (título + descripción, sin acentos). Columna GENERADA;
+    // `catalog.f_unaccent` (immutable) se crea en la migración antes que la columna.
+    searchTsv: tsvector('search_tsv').generatedAlwaysAs(
+      sql`to_tsvector('spanish', catalog.f_unaccent(coalesce(title,'') || ' ' || coalesce(description,'')))`,
+    ),
     ...timestamps,
   },
   (t) => [
     unique('items_store_slug_unique').on(t.storeId, t.slug),
     index('items_community_status_idx').on(t.communityId, t.status),
     index('items_store_idx').on(t.storeId),
+    index('items_search_tsv_idx').using('gin', t.searchTsv),
   ],
 );
 

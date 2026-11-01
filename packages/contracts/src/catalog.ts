@@ -326,3 +326,48 @@ export const AddCollectionItemInput = z.object({
   position: z.number().int().min(0).max(100000).optional(),
 });
 export type AddCollectionItemInput = z.infer<typeof AddCollectionItemInput>;
+
+// ===== Descubrimiento (feed + búsqueda) =====
+
+/**
+ * Ítem como aparece en el descubrimiento (feed/búsqueda): datos del ítem +
+ * nombre de tienda y comunidad para la ficha. Solo publicados y en comunidad
+ * visible (lo acota la RLS + el filtro del servidor).
+ */
+export const DiscoveryItem = z.object({
+  id: z.string(),
+  storeId: z.string(),
+  storeName: z.string(),
+  storeSlug: z.string(),
+  communityId: z.string(),
+  communityName: z.string().nullable(),
+  categoryId: z.string().nullable(),
+  kind: ItemKind,
+  slug: z.string(),
+  title: z.string(),
+  description: z.string().nullable(),
+  priceAmount: z.string().nullable(),
+  currency: Currency,
+  priceMode: PriceMode,
+  publishedAt: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type DiscoveryItem = z.infer<typeof DiscoveryItem>;
+
+/** Resultado del descubrimiento (página de ítems + si hay más). */
+export const DiscoveryItemList = z.object({
+  items: z.array(DiscoveryItem),
+  hasMore: z.boolean(),
+});
+export type DiscoveryItemList = z.infer<typeof DiscoveryItemList>;
+
+/** Parámetros de búsqueda del feed. Todo opcional salvo paginación con default. */
+export const DiscoveryQuery = z.object({
+  q: z.string().max(120).optional(),
+  communityId: Uuid.optional(),
+  categoryId: Uuid.optional(),
+  kind: ItemKind.optional(),
+  limit: z.number().int().min(1).max(50).default(20),
+  offset: z.number().int().min(0).default(0),
+});
+export type DiscoveryQuery = z.infer<typeof DiscoveryQuery>;

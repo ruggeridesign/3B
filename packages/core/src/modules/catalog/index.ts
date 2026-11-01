@@ -1,5 +1,6 @@
 // API pública del módulo catalog.
 
+export { discoveryRouter } from './http/discovery-routes';
 export { catalogRouter } from './http/routes';
 export {
   createGlobalAttribute,
@@ -22,6 +23,7 @@ export {
   removeCollectionItem,
   updateCollection,
 } from './infra/collection-repo';
+export { searchItems } from './infra/discovery-repo';
 export {
   createItem,
   deleteItem,

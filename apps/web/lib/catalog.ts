@@ -2,6 +2,7 @@ import type {
   AttributeDefinition,
   Category,
   Collection,
+  DiscoveryItem,
   ItemVariant,
   Media,
   ServiceDetail,
@@ -13,6 +14,34 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787';
 
 async function cookieHeader(): Promise<string> {
   return (await cookies()).toString();
+}
+
+/** Feed/búsqueda de ítems publicados (descubrimiento). Vacío si no hay sesión. */
+export async function getDiscoveryItems(params: {
+  q?: string;
+  kind?: string;
+  categoryId?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ items: DiscoveryItem[]; hasMore: boolean }> {
+  const cookie = await cookieHeader();
+  if (!cookie) return { items: [], hasMore: false };
+  const qs = new URLSearchParams();
+  if (params.q) qs.set('q', params.q);
+  if (params.kind) qs.set('kind', params.kind);
+  if (params.categoryId) qs.set('categoryId', params.categoryId);
+  if (params.limit != null) qs.set('limit', String(params.limit));
+  if (params.offset != null) qs.set('offset', String(params.offset));
+  try {
+    const res = await fetch(`${API}/v1/discovery/items?${qs.toString()}`, {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+    if (!res.ok) return { items: [], hasMore: false };
+    return (await res.json()) as { items: DiscoveryItem[]; hasMore: boolean };
+  } catch {
+    return { items: [], hasMore: false };
+  }
 }
 
 /** Taxonomía de categorías (global). [] si no hay sesión o falla. */

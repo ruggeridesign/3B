@@ -7,7 +7,11 @@ import {
   dbErrorResponse,
 } from '@3b/core/http';
 import { adminRouter, IMPERSONATE_COOKIE } from '@3b/core/modules/admin';
-import { catalogRouter, getItemStore } from '@3b/core/modules/catalog';
+import {
+  catalogRouter,
+  discoveryRouter,
+  getItemStore,
+} from '@3b/core/modules/catalog';
 import {
   kycRouter,
   meRouter,
@@ -118,6 +122,7 @@ app.route('/v1', adminRouter());
 app.route('/v1', storeRouter({ paymentsEncKey: env.PAYMENTS_ENC_KEY }));
 app.route('/v1', mediaRouter({ storage: mediaStorage, authorizeOwner }));
 app.route('/v1', catalogRouter());
+app.route('/v1', discoveryRouter());
 app.route('/v1', inventoryRouter());
 
 // Documento OpenAPI (contrato de la API).

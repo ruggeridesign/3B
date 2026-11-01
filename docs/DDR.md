@@ -40,14 +40,21 @@
   + seed), **Hito B** (Better Auth + RBAC con alcance + RLS + auditoría + tests de
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
   **M2** (tienda+catálogo+media; ver abajo).
-- **En curso:** **M3 · Inventario**, por rebanadas. HECHA: **M3 r1 — existencias +
-  movimientos** (`inventory.stock_levels` proyección + `inventory.stock_movements`
-  libro de solo inserción; trigger de proyección con no-sobreventa; idempotencia;
-  mostrador/ajustes por API y web en el detalle de ítem). **Difieren**: reservas
-  (`reservations`, atadas a pedidos/M5) y el **worker + Valkey** (pub/sub,
-  vencimiento de reservas, `stock.changed`) — necesitan la infra del worker, aún no
-  encendida. Siguiente: **M4 descubrimiento** (feed/búsqueda + `item_attr_index`) o
-  **M5 pedidos** (que traerá las reservas de stock).
+- **En curso:** **M3 · Inventario** y **M4 · Descubrimiento**, por rebanadas.
+  - **M3 r1 — existencias + movimientos** (`inventory.stock_levels` proyección +
+    `inventory.stock_movements` libro de solo inserción; trigger de proyección con
+    no-sobreventa; idempotencia; mostrador/ajustes por API y web). **Difieren**:
+    reservas (`reservations`, atadas a pedidos/M5) y el **worker + Valkey** (pub/sub,
+    vencimiento, `stock.changed`) — necesitan la infra del worker, aún no encendida.
+  - **M4 r1 — descubrimiento (feed + búsqueda de ítems)**: endpoint público
+    `GET /v1/discovery/items` (solo publicados, por comunidad visible), full-text
+    `search_tsv` (español, **sin acentos** vía `f_unaccent` immutable) + GIN +
+    pg_trgm (tipeos), filtros `q`/`kind`/`categoría`/comunidad, paginación; página
+    **Comprar** con buscador. **Difieren**: filtros por atributo (`item_attr_index`),
+    ficha pública de ítem/tienda, comunidades **vecinas** (`community_links`) y
+    `ranking.item_scores`.
+  - Siguiente: **M5 pedidos** (carrito/checkout; trae las **reservas** de stock y
+    enciende worker+Valkey) o más rebanadas de M4 (atributos/ficha/ranking).
 - **M2 (cerrado) · Tienda + Catálogo + núcleo de media**, por rebanadas
   verticales siguiendo `data-model.md §7`. HECHAS: **store 1 (alta)**, **2
   (equipo/roles)**, **3 (métodos de pago)**, **4 (horarios)**, **5 (KYC/
@@ -77,7 +84,62 @@
 
 ---
 
-## 2026-11-01 · _(este commit)_ · feat — M3 rebanada 1: inventario (existencias + movimientos)
+## 2026-11-01 · _(este commit)_ · feat — M4 rebanada 1: descubrimiento (feed + búsqueda de ítems)
+
+- **Qué:** descubrimiento público de ítems. Endpoint `GET /v1/discovery/items`
+  (`q`, `communityId`, `categoryId`, `kind`, `limit`/`offset`) que devuelve solo
+  ítems **publicados** en comunidad visible, con **nombre de tienda y comunidad**
+  para la ficha. Búsqueda full-text sobre una columna generada `catalog.items.
+  search_tsv` (español, **sin acentos**) + GIN, combinada con pg_trgm (ILIKE sin
+  acentos, tolera tipeos) y ordenada por relevancia (`ts_rank`) y recencia; sin `q`
+  es el feed por recencia. Web: página **Comprar** con buscador (texto + tipo) y
+  grilla de resultados.
+- **Por qué:** primer entregable de M4 — un Maker encuentra y ve ítems publicados de
+  su comunidad. Estrena el lado comprador (espacio "Comprar") sobre el catálogo.
+- **Impacto / archivos:** `packages/contracts/src/catalog.ts` (`DiscoveryItem`/
+  `DiscoveryItemList`/`DiscoveryQuery`) + exports; `packages/db/src/schema/catalog.ts`
+  (customType `tsvector` + columna generada `searchTsv` + índice GIN) + migración
+  `0018_brave_bug.sql` (función immutable `catalog.f_unaccent` + columna GENERADA +
+  GIN full-text + GIN pg_trgm sobre el título sin acentos);
+  `packages/core/src/modules/catalog` (`infra/discovery-repo.ts` `searchItems`,
+  `http/discovery-routes.ts`, exports); `apps/api` (monta `discoveryRouter`);
+  `apps/web` (`lib/catalog` getDiscoveryItems, componente `discovery-search`, página
+  `comprar`); `packages/core/test/integration/discovery.test.ts`.
+- **Decisiones de diseño:**
+  - **Descubrimiento en el módulo catalog** (dueño de `items`): es el lado de lectura
+    del catálogo, sin cruzar propiedad de tablas. Los joins a `store.stores`/
+    `community.communities` son lectura (RLS los acota igual).
+  - **`search_tsv` como columna GENERADA + `f_unaccent` immutable:** la `unaccent` de
+    la extensión es STABLE y no sirve en columnas/índices generados; se envuelve en
+    `catalog.f_unaccent` (IMMUTABLE, diccionario explícito). `to_tsvector('spanish',
+    …)` con config literal es immutable → columna STORED válida, poblada para las
+    filas existentes al crearse. GIN para full-text; **pg_trgm** aparte sobre
+    `f_unaccent(title)` para ILIKE/similaridad difusa.
+  - **Solo publicados, por RLS + filtro:** la RLS de `items` ya limita a publicados
+    en comunidad visible para no-miembros; el repo **además** filtra
+    `status='published'` para que un miembro no vea sus borradores en el feed
+    (descubrimiento = vista pública). Búsqueda = `search_tsv @@ websearch_to_tsquery`
+    **OR** `f_unaccent(title) ILIKE %q%`.
+  - **Paginación con `limit+1`:** se pide uno de más para calcular `hasMore` sin un
+    COUNT aparte. Query dinámica con fragmentos `sql` (condiciones + orderBy).
+  - **Diferidos:** filtros por atributo (necesitan `item_attr_index`), ficha pública
+    de ítem/tienda (no hay página pública de ítem aún), comunidades **vecinas**
+    (`community_links`; hoy el alcance es comunidad propia/pública vía
+    `can_see_community`) y `ranking.item_scores` (orden hoy = relevancia+recencia).
+- **Verificación:** `pnpm check` verde (boundaries 313 módulos, unit 9/9);
+  integración db 6/6 + **core 58/58** (+5 descubrimiento: texto encuentra publicados,
+  unaccent, filtro por tipo, borradores nunca aparecen (ni al dueño), feed por
+  recencia); smoke HTTP 11/11 (401 sin sesión, feed, texto, unaccent "taladró",
+  kind, borrador oculto, sin-resultados, `limit=1`+`hasMore`).
+- **Estado para retomar:** M4 r1 entrega feed/búsqueda. Siguiente: **ficha pública
+  de ítem** + **filtros por atributo** (`item_attr_index`) + **vecinas** + `ranking`;
+  o saltar a **M5 pedidos** (carrito/checkout + reservas de stock, enciende
+  worker+Valkey).
+- **Relacionado:** [data-model §4/§discovery](architecture/data-model.md), ROADMAP M4,
+  [diccionario de objetos](../.docs/3B_diccionario_de_objetos.md) (§ranking/analytics),
+  entrada de catalog 1 (ítems) y M3 r1 (inventario).
+
+## 2026-11-01 · `1c8be4c` · feat — M3 rebanada 1: inventario (existencias + movimientos)
 
 - **Qué:** módulo nuevo `inventory`. **Existencias** (`inventory.stock_levels`,
   proyección por variante: `on_hand`/`reserved`/`low_threshold`/`version`;
