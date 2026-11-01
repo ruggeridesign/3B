@@ -204,3 +204,48 @@ export const UpdateItemInput = z.object({
   attributes: AttributeValues.optional(),
 });
 export type UpdateItemInput = z.infer<typeof UpdateItemInput>;
+
+// ===== Variantes de ítem =====
+
+/** SKU de variante: alfanumérico con guiones/guion bajo; único por ítem. */
+export const Sku = z
+  .string()
+  .min(1)
+  .max(60)
+  .regex(/^[A-Za-z0-9_-]+$/, 'SKU: letras, números, guion y guion bajo.');
+
+/** Una variante (combinación de ejes) de un ítem. */
+export const ItemVariant = z.object({
+  id: z.string(),
+  itemId: z.string(),
+  sku: z.string(),
+  barcode: z.string().nullable(),
+  axisValues: AttributeValues,
+  priceAmount: z.string().nullable(),
+  trackStock: z.boolean(),
+  createdAt: z.string(),
+});
+export type ItemVariant = z.infer<typeof ItemVariant>;
+
+/** Lista de variantes de un ítem. */
+export const ItemVariantList = z.object({ variants: z.array(ItemVariant) });
+export type ItemVariantList = z.infer<typeof ItemVariantList>;
+
+/** Alta de una variante. Los ejes deben ser atributos con `variant_axis`. */
+export const CreateVariantInput = z.object({
+  sku: Sku,
+  barcode: z.string().max(64).optional(),
+  axisValues: AttributeValues.optional(),
+  priceAmount: MoneyAmount.optional(),
+  trackStock: z.boolean().optional(),
+});
+export type CreateVariantInput = z.infer<typeof CreateVariantInput>;
+
+/** Edición parcial de una variante. */
+export const UpdateVariantInput = z.object({
+  barcode: z.string().max(64).nullable().optional(),
+  axisValues: AttributeValues.optional(),
+  priceAmount: MoneyAmount.nullable().optional(),
+  trackStock: z.boolean().optional(),
+});
+export type UpdateVariantInput = z.infer<typeof UpdateVariantInput>;

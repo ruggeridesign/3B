@@ -39,6 +39,32 @@ export const categories = catalog.table(
 );
 
 /**
+ * Variante de un ítem (combinación de ejes como color/talle). `axis_values`
+ * guarda el mapa eje→valor (los ejes son atributos con `variant_axis`).
+ * `price_amount` opcional sobreescribe el precio del ítem; `track_stock` lo
+ * consume inventario (M3). SKU único por ítem.
+ */
+export const itemVariants = catalog.table(
+  'item_variants',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id, { onDelete: 'cascade' }),
+    sku: text('sku').notNull(),
+    barcode: text('barcode'),
+    axisValues: jsonb('axis_values').notNull().default({}),
+    priceAmount: numeric('price_amount', { precision: 12, scale: 2 }),
+    trackStock: boolean('track_stock').notNull().default(false),
+    ...timestamps,
+  },
+  (t) => [
+    unique('item_variants_item_sku_unique').on(t.itemId, t.sku),
+    index('item_variants_barcode_idx').on(t.barcode),
+  ],
+);
+
+/**
  * Definición de un atributo con **alcance** (D-02): `global` (plataforma),
  * `category` (scope_id = categoría) o `store` (scope_id = tienda). `scope_id` es
  * polimórfico (sin FK dura). Los valores de atributo de cada ítem llegan en una

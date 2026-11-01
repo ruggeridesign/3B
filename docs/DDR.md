@@ -43,9 +43,10 @@
   verticales siguiendo `data-model.md §7`. HECHAS: **store 1 (alta)**, **2
   (equipo/roles)**, **3 (métodos de pago)**, **núcleo de `media` (backend)**,
   **catalog 1 (ítems)**, **2a (categorías)**, **2b (atributos: definiciones +
-  herencia)** y **2c (valores de atributo en ítems + validación)**. Siguiente:
-  **catalog 2d** — variantes (`item_variants`, ejes desde `variant_axis`); luego
-  wirear **imágenes** (media) a ítems; o KYC.
+  herencia)**, **2c (valores de atributo en ítems)** y **2d (variantes)**. Catalog
+  queda con su núcleo completo (taxonomía, atributos, ítems con valores, variantes).
+  Siguiente: wirear **imágenes** (media) a ítems/tiendas; o **KYC**; o avanzar a
+  **M3 (inventario)** / **M4 (descubrimiento)**.
 - **Localhost demo:** `pnpm db:up` + `pnpm --filter @3b/api dev` (8787) +
   `pnpm --filter @3b/web dev` (3000). Usuarios seed, password `Password123!`
   (carlos@3b.test = Seller con 2 tiendas e ítems; admin@3b.test = superadmin +
@@ -59,7 +60,46 @@
 
 ---
 
-## 2026-11-01 · _(este commit)_ · feat — M2 catalog rebanada 2c: valores de atributo en ítems
+## 2026-11-01 · _(este commit)_ · feat — M2 catalog rebanada 2d: variantes de ítem
+
+- **Qué:** **variantes** de ítem (`catalog.item_variants`): combinaciones de ejes
+  (color/talle…) con SKU único por ítem, barcode, precio opcional y `track_stock`
+  (para inventario M3). CRUD anidado `GET/POST
+  /v1/stores/{id}/items/{itemId}/variants` y `PATCH/DELETE .../{variantId}`. Los
+  **ejes se validan** contra los atributos con `variant_axis` resueltos para la
+  categoría del ítem. Seed: el taladro trae 2 variantes (color negro/azul).
+- **Por qué:** completa el núcleo de catalog (ítems con variantes vendibles); el
+  SKU/variante es la unidad que inventario (M3) y pedidos (M5) referencian.
+- **Impacto / archivos:** `packages/contracts/src/catalog.ts` (`Sku`/`ItemVariant`
+  (`+List`)/`CreateVariantInput`/`UpdateVariantInput`); migración
+  `0012_romantic_slyde.sql` (`item_variants` + **RLS derivada del ítem padre** +
+  grants); `packages/db/src/seed.ts` (2 variantes);
+  `packages/core/src/modules/catalog/infra/variant-repo.ts` + router (4 rutas) +
+  exports; `packages/core/test/integration/variant.test.ts`.
+- **Decisiones de diseño:**
+  - **RLS derivada del ítem (sin denormalizar):** las políticas usan una subconsulta
+    `EXISTS (SELECT 1 FROM catalog.items i WHERE i.id = item_id …)`. Como esa
+    subconsulta queda sujeta a la RLS de `items`, una variante **se ve si su ítem se
+    ve**; y se gestiona si sos owner/admin/catalog de la tienda del ítem. Evita una
+    columna/trigger de `store_id` en variantes.
+  - **Validación de ejes:** se resuelven los atributos con `variant_axis` de la
+    categoría del ítem y se valida `axis_values` con la misma función pura de 2c
+    (clave no-eje o valor fuera de opciones → 400).
+  - **Web diferida:** el editor de variantes necesita una página de **detalle de
+    ítem** (todavía no existe); por eso 2d es backend + seed (como el núcleo de
+    media). La lista de la tienda aún no muestra variantes.
+  - `price_amount` de variante **opcional** (null = hereda el del ítem);
+    `track_stock` es una bandera que consumirá inventario en M3.
+- **Verificación:** `pnpm check` verde (boundaries 257); integración db 6/6 +
+  **core 40/40** (+2 variantes: RLS por ítem padre, crear/editar/borrar, sales
+  bloqueado); smoke HTTP 9/9 (ejes válidos/ inválidos, SKU repetido 409, gating).
+- **Estado para retomar:** catalog núcleo **completo**. Siguiente: **imágenes de
+  ítems** (wirear media; requiere una página de detalle de ítem que además dará
+  lugar al editor de variantes), o **KYC**, o **M3/M4**.
+- **Relacionado:** [data-model §catalog](architecture/data-model.md), entradas de
+  catalog 2a/2b/2c.
+
+## 2026-11-01 · `06fc93b` · feat — M2 catalog rebanada 2c: valores de atributo en ítems
 
 - **Qué:** los ítems guardan **valores de atributo** (`items.attributes` jsonb) y
   el servidor los **valida contra las definiciones resueltas** (global+categoría+

@@ -23,6 +23,12 @@ import {
   listItemsByStore,
   updateItem,
 } from '../infra/item-repo';
+import {
+  createVariant,
+  deleteVariant,
+  listVariants,
+  updateVariant,
+} from '../infra/variant-repo';
 
 const kind = z.enum(['product', 'service']);
 const status = z.enum(['draft', 'published', 'archived']);
@@ -125,6 +131,55 @@ const storeParam = z.object({
 const itemParam = z.object({
   id: z.string().openapi({ param: { name: 'id', in: 'path' } }),
   itemId: z.string().openapi({ param: { name: 'itemId', in: 'path' } }),
+});
+
+// ----- Variantes -----
+const sku = z
+  .string()
+  .min(1)
+  .max(60)
+  .regex(/^[A-Za-z0-9_-]+$/);
+
+const variantOut = z
+  .object({
+    id: z.string(),
+    itemId: z.string(),
+    sku: z.string(),
+    barcode: z.string().nullable(),
+    axisValues: attributeValues,
+    priceAmount: z.string().nullable(),
+    trackStock: z.boolean(),
+    createdAt: z.string(),
+  })
+  .openapi('ItemVariant');
+
+const variantListOut = z
+  .object({ variants: z.array(variantOut) })
+  .openapi('ItemVariantList');
+
+const createVariantBody = z
+  .object({
+    sku,
+    barcode: z.string().max(64).optional(),
+    axisValues: attributeValues.optional(),
+    priceAmount: money.optional(),
+    trackStock: z.boolean().optional(),
+  })
+  .openapi('CreateVariant');
+
+const updateVariantBody = z
+  .object({
+    barcode: z.string().max(64).nullable().optional(),
+    axisValues: attributeValues.optional(),
+    priceAmount: money.nullable().optional(),
+    trackStock: z.boolean().optional(),
+  })
+  .openapi('UpdateVariant');
+
+const variantParam = z.object({
+  id: z.string().openapi({ param: { name: 'id', in: 'path' } }),
+  itemId: z.string().openapi({ param: { name: 'itemId', in: 'path' } }),
+  variantId: z.string().openapi({ param: { name: 'variantId', in: 'path' } }),
 });
 
 // ----- Atributos -----
@@ -437,6 +492,200 @@ export function catalogRouter() {
       }
       const existed = await deleteItem(db, id, itemId);
       if (!existed) return c.json({ error: 'No existe ese ítem.' }, 404);
+      return c.body(null, 204);
+    },
+  );
+
+  // ===== Variantes de ítem =====
+
+  // Listar variantes de un ítem (la RLS acota por visibilidad del ítem).
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/stores/{id}/items/{itemId}/variants',
+      tags: ['catalog'],
+      summary: 'Variantes del ítem',
+      request: { params: itemParam },
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: variantListOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { itemId } = c.req.valid('param');
+      const variants = await listVariants(db, itemId);
+      return c.json({ variants }, 200);
+    },
+  );
+
+  // Crear una variante. Solo owner/admin/catalog. Ejes validados contra los
+  // atributos con variant_axis resueltos para la categoría del ítem.
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/stores/{id}/items/{itemId}/variants',
+      tags: ['catalog'],
+      summary: 'Crear una variante',
+      request: {
+        params: itemParam,
+        body: {
+          content: { 'application/json': { schema: createVariantBody } },
+        },
+      },
+      responses: {
+        201: {
+          description: 'Creada',
+          content: { 'application/json': { schema: variantOut } },
+        },
+        400: {
+          description: 'Ejes inválidos',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No podés gestionar el catálogo de esta tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'No existe ese ítem',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        409: {
+          description: 'SKU repetido en el ítem',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id, itemId } = c.req.valid('param');
+      const body = c.req.valid('json');
+      if (!(await canManageCatalog(db, id))) {
+        return c.json(
+          { error: 'No podés gestionar el catálogo de esta tienda.' },
+          403,
+        );
+      }
+      const item = await getItem(db, id, itemId);
+      if (!item) return c.json({ error: 'No existe ese ítem.' }, 404);
+      if (body.axisValues) {
+        const axes = (await resolveAttributes(db, id, item.categoryId)).filter(
+          (d) => d.variantAxis,
+        );
+        const errors = validateAttributeValues(axes, body.axisValues);
+        if (errors.length) return c.json({ error: errors.join('; ') }, 400);
+      }
+      const variant = await createVariant(db, itemId, body);
+      return c.json(variant, 201);
+    },
+  );
+
+  // Editar una variante. Solo owner/admin/catalog.
+  app.openapi(
+    createRoute({
+      method: 'patch',
+      path: '/stores/{id}/items/{itemId}/variants/{variantId}',
+      tags: ['catalog'],
+      summary: 'Editar una variante',
+      request: {
+        params: variantParam,
+        body: {
+          content: { 'application/json': { schema: updateVariantBody } },
+        },
+      },
+      responses: {
+        200: {
+          description: 'Actualizada',
+          content: { 'application/json': { schema: variantOut } },
+        },
+        400: {
+          description: 'Ejes inválidos',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No podés gestionar el catálogo de esta tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'No existe esa variante',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id, itemId, variantId } = c.req.valid('param');
+      const body = c.req.valid('json');
+      if (!(await canManageCatalog(db, id))) {
+        return c.json(
+          { error: 'No podés gestionar el catálogo de esta tienda.' },
+          403,
+        );
+      }
+      if (body.axisValues) {
+        const item = await getItem(db, id, itemId);
+        if (!item) return c.json({ error: 'No existe ese ítem.' }, 404);
+        const axes = (await resolveAttributes(db, id, item.categoryId)).filter(
+          (d) => d.variantAxis,
+        );
+        const errors = validateAttributeValues(axes, body.axisValues);
+        if (errors.length) return c.json({ error: errors.join('; ') }, 400);
+      }
+      const variant = await updateVariant(db, itemId, variantId, body);
+      if (!variant) return c.json({ error: 'No existe esa variante.' }, 404);
+      return c.json(variant, 200);
+    },
+  );
+
+  // Borrar una variante. Solo owner/admin/catalog.
+  app.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/stores/{id}/items/{itemId}/variants/{variantId}',
+      tags: ['catalog'],
+      summary: 'Borrar una variante',
+      request: { params: variantParam },
+      responses: {
+        204: { description: 'Borrada' },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No podés gestionar el catálogo de esta tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'No existe esa variante',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id, itemId, variantId } = c.req.valid('param');
+      if (!(await canManageCatalog(db, id))) {
+        return c.json(
+          { error: 'No podés gestionar el catálogo de esta tienda.' },
+          403,
+        );
+      }
+      const existed = await deleteVariant(db, itemId, variantId);
+      if (!existed) return c.json({ error: 'No existe esa variante.' }, 404);
       return c.body(null, 204);
     },
   );

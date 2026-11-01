@@ -314,16 +314,38 @@ async function main() {
     ])
     .onConflictDoNothing();
 
+  // Variantes del taladro (eje: color). SKU único por ítem.
+  await db
+    .insert(schema.itemVariants)
+    .values([
+      {
+        id: '66666666-6666-6666-6666-666666666601',
+        itemId: '44444444-4444-4444-4444-444444444401',
+        sku: 'TAL-650-NEGRO',
+        axisValues: { color: 'negro' },
+        trackStock: true,
+      },
+      {
+        id: '66666666-6666-6666-6666-666666666602',
+        itemId: '44444444-4444-4444-4444-444444444401',
+        sku: 'TAL-650-AZUL',
+        axisValues: { color: 'azul' },
+        trackStock: true,
+      },
+    ])
+    .onConflictDoNothing();
+
   // Resumen
-  const [[c], [u], [s], [m], [i]] = await Promise.all([
+  const [[c], [u], [s], [m], [i], [v]] = await Promise.all([
     sql`select count(*)::int as n from community.communities`,
     sql`select count(*)::int as n from identity.users`,
     sql`select count(*)::int as n from store.stores`,
     sql`select count(*)::int as n from community.memberships`,
     sql`select count(*)::int as n from catalog.items`,
+    sql`select count(*)::int as n from catalog.item_variants`,
   ]);
   console.log(
-    `[seed] comunidades=${c.n} usuarios=${u.n} tiendas=${s.n} membresías=${m.n} ítems=${i.n}`,
+    `[seed] comunidades=${c.n} usuarios=${u.n} tiendas=${s.n} membresías=${m.n} ítems=${i.n} variantes=${v.n}`,
   );
 
   await sql.end();

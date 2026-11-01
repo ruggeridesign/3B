@@ -20,3 +20,9 @@ export {
   listItemsByStore,
   updateItem,
 } from './infra/item-repo';
+export {
+  createVariant,
+  deleteVariant,
+  listVariants,
+  updateVariant,
+} from './infra/variant-repo';
