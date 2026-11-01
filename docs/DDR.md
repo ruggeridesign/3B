@@ -50,11 +50,16 @@
     `GET /v1/discovery/items` (solo publicados, por comunidad visible), full-text
     `search_tsv` (español, **sin acentos** vía `f_unaccent` immutable) + GIN +
     pg_trgm (tipeos), filtros `q`/`kind`/`categoría`/comunidad, paginación; página
-    **Comprar** con buscador. **Difieren**: filtros por atributo (`item_attr_index`),
-    ficha pública de ítem/tienda, comunidades **vecinas** (`community_links`) y
-    `ranking.item_scores`.
-  - Siguiente: **M5 pedidos** (carrito/checkout; trae las **reservas** de stock y
-    enciende worker+Valkey) o más rebanadas de M4 (atributos/ficha/ranking).
+    **Comprar** con buscador.
+  - **M4 r2 — ficha pública de ítem**: `GET /v1/discovery/items/{id}` (ítem +
+    tienda + comunidad + imágenes + variantes **con disponibilidad** + detalle de
+    servicio). Policies de descubrimiento: **imágenes** (`media_select_item`) y
+    **disponibilidad** (`stock_levels_select_public`) visibles a quien ve el ítem
+    (antes stock era solo-miembros). Página `/comprar/[id]`; el feed enlaza a ella.
+    **Difieren**: filtros por atributo (`item_attr_index`), ficha de **tienda**
+    (storefront), comunidades **vecinas** (`community_links`) y `ranking.item_scores`.
+  - Siguiente: **M4 r3** (filtros por atributo / vecinas / ranking) o **M5 pedidos**
+    (carrito/checkout; trae las **reservas** de stock y enciende worker+Valkey).
 - **M2 (cerrado) · Tienda + Catálogo + núcleo de media**, por rebanadas
   verticales siguiendo `data-model.md §7`. HECHAS: **store 1 (alta)**, **2
   (equipo/roles)**, **3 (métodos de pago)**, **4 (horarios)**, **5 (KYC/
@@ -84,7 +89,55 @@
 
 ---
 
-## 2026-11-01 · _(este commit)_ · feat — M4 rebanada 1: descubrimiento (feed + búsqueda de ítems)
+## 2026-11-01 · _(este commit)_ · feat — M4 rebanada 2: ficha pública de ítem
+
+- **Qué:** ficha pública de un ítem para el comprador. `GET /v1/discovery/items/{id}`
+  devuelve el ítem + **tienda** (nombre/slug/verificada) + **comunidad** + **imágenes**
+  (URLs) + **variantes con disponibilidad** (`available = on_hand − reserved`) +
+  **detalle de servicio**; 404 si no es visible. Dos policies de descubrimiento:
+  `media_select_item` (el comprador ve las fotos de un ítem visible) y
+  `stock_levels_select_public` (ve la disponibilidad de un publicado). Web: página
+  `/comprar/[id]`; las tarjetas del feed ahora enlazan a la ficha.
+- **Por qué:** cerraba el hueco de M4 r1 — el feed no enlazaba a nada. Un Maker ahora
+  **ve** el ítem completo (fotos, SKUs, stock, servicio, tienda), no solo lo encuentra.
+- **Impacto / archivos:** `packages/contracts/src/catalog.ts` (`PublicItem`/
+  `PublicItemVariant`) + exports; migración **custom** `0019_media_item_visibility.sql`
+  (`drizzle-kit generate --custom`): policies `media_select_item` +
+  `stock_levels_select_public`; `packages/core/src/modules/catalog`
+  (`infra/discovery-repo.ts` `getPublicItem`, `http/discovery-routes.ts` con la ruta
+  + `DiscoveryRouterOptions.mediaPublicUrl` inyectado, exports); `apps/api` (pasa
+  `mediaStorage.publicUrl` al `discoveryRouter`); `apps/web` (`lib/catalog`
+  getPublicItem, página `comprar/[id]`, enlace en el feed);
+  `packages/core/test/integration/public-item.test.ts` (+ actualización de
+  `inventory.test.ts`).
+- **Decisiones de diseño:**
+  - **Visibilidad de descubrimiento por policies permissive** (como `media_select_kyc`):
+    una media `owner_type='item'` y un `stock_levels` se LEEN si la variante→ítem es
+    visible (la subconsulta queda sujeta a la RLS de `items` → publicado en comunidad
+    visible, o miembro). **Esto amplía** la visibilidad de stock de M3 (antes
+    solo-miembros): ahora el comprador ve `available` de publicados (la API solo
+    expone `available`, no datos operativos crudos). Se actualizó el test de
+    inventario acorde.
+  - **`mediaPublicUrl` inyectado al router** (como `paymentsEncKey`): la ficha arma
+    las URLs de imágenes sin que `catalog` dependa de `media`/storage; `apps/api`
+    (que conoce todo) pasa `mediaStorage.publicUrl`.
+  - **404 por RLS**, no por gate explícito: si el ítem no es visible, `getPublicItem`
+    devuelve null → 404 (no filtra existencia). Reúne ítem/variantes/servicio/imágenes
+    con consultas acotadas por RLS.
+  - **Migración `--custom`** para policies sin cambio de esquema: deja journal +
+    snapshot consistentes sin editar meta a mano.
+- **Verificación:** `pnpm check` verde (boundaries 315 módulos, unit 9/9);
+  integración db 6/6 + **core 61/61** (+3 ficha: producto con tienda/variantes/stock,
+  servicio con su detalle, borrador → null; + ajuste de inventario a la nueva
+  visibilidad); smoke HTTP 7/7 (owner sube imagen → comprador la ve en la ficha y por
+  `/media/{id}`, variantes con disponibilidad, borrador 404).
+- **Estado para retomar:** falta de M4: **filtros por atributo** (`item_attr_index`),
+  **ficha de tienda** (storefront), **vecinas** (`community_links`) y `ranking`.
+  Luego **M5 pedidos** (reservas + worker/Valkey).
+- **Relacionado:** [data-model §4/§discovery](architecture/data-model.md), ROADMAP M4,
+  entradas de M4 r1 (feed/búsqueda), media (núcleo) e inventario (disponibilidad).
+
+## 2026-11-01 · `3e91ddd` · feat — M4 rebanada 1: descubrimiento (feed + búsqueda de ítems)
 
 - **Qué:** descubrimiento público de ítems. Endpoint `GET /v1/discovery/items`
   (`q`, `communityId`, `categoryId`, `kind`, `limit`/`offset`) que devuelve solo

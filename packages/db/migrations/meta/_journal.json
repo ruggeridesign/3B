@@ -134,6 +134,13 @@
       "when": 1793558201892,
       "tag": "0018_brave_bug",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793560668891,
+      "tag": "0019_media_item_visibility",
+      "breakpoints": true
     }
   ]
 }

@@ -32,6 +32,8 @@ export {
   ItemVariantList,
   MoneyAmount,
   PriceMode,
+  PublicItem,
+  PublicItemVariant,
   ServiceDetail,
   ServiceModality,
   Sku,

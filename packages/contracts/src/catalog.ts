@@ -361,6 +361,53 @@ export const DiscoveryItemList = z.object({
 });
 export type DiscoveryItemList = z.infer<typeof DiscoveryItemList>;
 
+/** Variante como se muestra en la ficha pública (con disponibilidad). */
+export const PublicItemVariant = z.object({
+  id: z.string(),
+  sku: z.string(),
+  axisValues: AttributeValues,
+  priceAmount: z.string().nullable(),
+  available: z.number().int().nullable(), // null si no lleva stock
+});
+export type PublicItemVariant = z.infer<typeof PublicItemVariant>;
+
+/**
+ * Ficha pública de un ítem: todo lo visible para un comprador (datos + tienda +
+ * imágenes + variantes con disponibilidad + detalle de servicio). Solo accesible
+ * si el ítem es visible (publicado en comunidad visible, o miembro de la tienda).
+ */
+export const PublicItem = z.object({
+  id: z.string(),
+  storeId: z.string(),
+  storeName: z.string(),
+  storeSlug: z.string(),
+  storeVerified: z.boolean(),
+  communityId: z.string(),
+  communityName: z.string().nullable(),
+  categoryId: z.string().nullable(),
+  kind: ItemKind,
+  slug: z.string(),
+  title: z.string(),
+  description: z.string().nullable(),
+  priceAmount: z.string().nullable(),
+  currency: Currency,
+  priceMode: PriceMode,
+  attributes: AttributeValues,
+  images: z.array(z.string()), // URLs de las imágenes listas
+  variants: z.array(PublicItemVariant),
+  serviceDetail: z
+    .object({
+      durationMin: z.number().int().nullable(),
+      modality: ServiceModality,
+      coverageKm: z.number().int().nullable(),
+      notes: z.string().nullable(),
+    })
+    .nullable(),
+  publishedAt: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type PublicItem = z.infer<typeof PublicItem>;
+
 /** Parámetros de búsqueda del feed. Todo opcional salvo paginación con default. */
 export const DiscoveryQuery = z.object({
   q: z.string().max(120).optional(),

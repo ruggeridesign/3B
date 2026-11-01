@@ -89,7 +89,7 @@ describe('inventory: existencias y movimientos bajo RLS', () => {
     expect(after?.onHand).toBe(start - 2); // se aplicó UNA sola vez
   });
 
-  it('sales NO puede mover stock (RLS); un no-miembro no ve el nivel', async () => {
+  it('sales NO puede mover stock (RLS); la disponibilidad de publicados es visible al comprador', async () => {
     await expect(
       asUser(MARTA, (tx) =>
         applyMovement(tx, NEGRO, MARTA, {
@@ -100,7 +100,11 @@ describe('inventory: existencias y movimientos bajo RLS', () => {
       ),
     ).rejects.toThrow();
 
+    // Lucía (miembro de Coro, no del equipo) ve el nivel de un ítem PUBLICADO
+    // en comunidad visible: la policy de descubrimiento (M4) lo permite (antes
+    // era solo-miembros). La escritura sigue bloqueada (arriba).
     const hers = await asUser(LUCIA, (tx) => getLevel(tx, NEGRO));
-    expect(hers).toBeNull();
+    expect(hers).not.toBeNull();
+    expect(hers?.available).toBeGreaterThanOrEqual(0);
   });
 });

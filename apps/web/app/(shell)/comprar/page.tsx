@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getDiscoveryItems } from '../../../lib/catalog';
 import { getMe } from '../../../lib/me';
@@ -34,25 +35,27 @@ export default async function Comprar({
       {items.length > 0 ? (
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((it) => (
-            <li
-              key={it.id}
-              className="glass flex flex-col gap-1 rounded-lg p-4"
-            >
-              <p className="font-medium text-foreground">{it.title}</p>
-              <p className="text-muted-foreground text-sm">
-                {it.storeName}
-                {it.communityName ? ` · ${it.communityName}` : ''}
-              </p>
-              {it.description && (
-                <p className="line-clamp-2 text-muted-foreground text-sm">
-                  {it.description}
+            <li key={it.id}>
+              <Link
+                href={`/comprar/${it.id}`}
+                className="glass flex h-full flex-col gap-1 rounded-lg p-4 transition-colors hover:border-ring"
+              >
+                <p className="font-medium text-foreground">{it.title}</p>
+                <p className="text-muted-foreground text-sm">
+                  {it.storeName}
+                  {it.communityName ? ` · ${it.communityName}` : ''}
                 </p>
-              )}
-              <p className="mt-1 font-medium text-foreground">
-                {it.priceMode === 'quote' || !it.priceAmount
-                  ? 'A cotizar'
-                  : `${it.currency} ${it.priceAmount}${PRICE_MODE_SUFFIX[it.priceMode] ?? ''}`}
-              </p>
+                {it.description && (
+                  <p className="line-clamp-2 text-muted-foreground text-sm">
+                    {it.description}
+                  </p>
+                )}
+                <p className="mt-1 font-medium text-foreground">
+                  {it.priceMode === 'quote' || !it.priceAmount
+                    ? 'A cotizar'
+                    : `${it.currency} ${it.priceAmount}${PRICE_MODE_SUFFIX[it.priceMode] ?? ''}`}
+                </p>
+              </Link>
             </li>
           ))}
         </ul>

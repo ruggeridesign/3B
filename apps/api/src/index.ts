@@ -122,7 +122,10 @@ app.route('/v1', adminRouter());
 app.route('/v1', storeRouter({ paymentsEncKey: env.PAYMENTS_ENC_KEY }));
 app.route('/v1', mediaRouter({ storage: mediaStorage, authorizeOwner }));
 app.route('/v1', catalogRouter());
-app.route('/v1', discoveryRouter());
+app.route(
+  '/v1',
+  discoveryRouter({ mediaPublicUrl: (key) => mediaStorage.publicUrl(key) }),
+);
 app.route('/v1', inventoryRouter());
 
 // Documento OpenAPI (contrato de la API).
