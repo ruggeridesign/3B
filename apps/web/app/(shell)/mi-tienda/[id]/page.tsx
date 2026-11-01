@@ -9,11 +9,13 @@ import { getMe } from '../../../../lib/me';
 import {
   getPaymentMethods,
   getStore,
+  getStoreHours,
   getStoreItems,
   getStoreMembers,
 } from '../../../../lib/stores';
 import { StoreAttributes } from '../../../_components/store-attributes';
 import { StoreCatalog } from '../../../_components/store-catalog';
+import { StoreHours } from '../../../_components/store-hours';
 import { StorePayments } from '../../../_components/store-payments';
 import { StoreTeam } from '../../../_components/store-team';
 
@@ -49,15 +51,23 @@ export default async function StoreDetail({
   // El catálogo lo gestionan también los miembros con rol `catalog`.
   const canManageCatalog = canManage || myRole === 'catalog';
 
-  const [members, paymentMethods, items, categories, ownAttrs, resolvedAttrs] =
-    await Promise.all([
-      getStoreMembers(id),
-      getPaymentMethods(id),
-      getStoreItems(id),
-      getCategories(),
-      canManageCatalog ? getStoreAttributes(id) : Promise.resolve([]),
-      canManageCatalog ? getResolvedAttributes(id) : Promise.resolve([]),
-    ]);
+  const [
+    members,
+    paymentMethods,
+    hours,
+    items,
+    categories,
+    ownAttrs,
+    resolvedAttrs,
+  ] = await Promise.all([
+    getStoreMembers(id),
+    getPaymentMethods(id),
+    getStoreHours(id),
+    getStoreItems(id),
+    getCategories(),
+    canManageCatalog ? getStoreAttributes(id) : Promise.resolve([]),
+    canManageCatalog ? getResolvedAttributes(id) : Promise.resolve([]),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -93,6 +103,8 @@ export default async function StoreDetail({
           resolved={resolvedAttrs}
         />
       )}
+
+      <StoreHours storeId={store.id} hours={hours} canManage={canManage} />
 
       <StorePayments
         storeId={store.id}

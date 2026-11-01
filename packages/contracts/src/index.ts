@@ -54,13 +54,17 @@ export {
 export {
   AssignableStoreRole,
   CreatePaymentMethodInput,
+  CreateStoreHourInput,
   CreateStoreInput,
   InviteStoreMemberInput,
+  MinutesOfDay,
   PaymentMethod,
   PaymentMethodDetails,
   PaymentMethodList,
   PaymentMethodType,
   Store,
+  StoreHour,
+  StoreHourList,
   StoreKind,
   StoreList,
   StoreMember,
@@ -70,5 +74,6 @@ export {
   UpdatePaymentMethodInput,
   UpdateStoreMemberInput,
   Uuid,
+  Weekday,
 } from './store';
 export { HealthResponse } from './system';

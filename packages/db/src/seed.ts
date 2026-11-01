@@ -346,8 +346,22 @@ async function main() {
     ])
     .onConflictDoNothing();
 
+  // Horario de la peluquería (demo): Lun–Vie 09:00–18:00, Sáb 09:00–13:00.
+  // weekday 0=domingo…6=sábado; minutos desde medianoche (540=09:00, etc.).
+  await db
+    .insert(schema.storeHours)
+    .values([
+      { storeId: S_PELUQUERIA, weekday: 1, opensMin: 540, closesMin: 1080 },
+      { storeId: S_PELUQUERIA, weekday: 2, opensMin: 540, closesMin: 1080 },
+      { storeId: S_PELUQUERIA, weekday: 3, opensMin: 540, closesMin: 1080 },
+      { storeId: S_PELUQUERIA, weekday: 4, opensMin: 540, closesMin: 1080 },
+      { storeId: S_PELUQUERIA, weekday: 5, opensMin: 540, closesMin: 1080 },
+      { storeId: S_PELUQUERIA, weekday: 6, opensMin: 540, closesMin: 780 },
+    ])
+    .onConflictDoNothing();
+
   // Resumen
-  const [[c], [u], [s], [m], [i], [v], [sd]] = await Promise.all([
+  const [[c], [u], [s], [m], [i], [v], [sd], [h]] = await Promise.all([
     sql`select count(*)::int as n from community.communities`,
     sql`select count(*)::int as n from identity.users`,
     sql`select count(*)::int as n from store.stores`,
@@ -355,9 +369,10 @@ async function main() {
     sql`select count(*)::int as n from catalog.items`,
     sql`select count(*)::int as n from catalog.item_variants`,
     sql`select count(*)::int as n from catalog.service_details`,
+    sql`select count(*)::int as n from store.store_hours`,
   ]);
   console.log(
-    `[seed] comunidades=${c.n} usuarios=${u.n} tiendas=${s.n} membresías=${m.n} ítems=${i.n} variantes=${v.n} servicios=${sd.n}`,
+    `[seed] comunidades=${c.n} usuarios=${u.n} tiendas=${s.n} membresías=${m.n} ítems=${i.n} variantes=${v.n} servicios=${sd.n} horarios=${h.n}`,
   );
 
   await sql.end();

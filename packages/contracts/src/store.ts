@@ -150,3 +150,47 @@ export const UpdatePaymentMethodInput = z.object({
   active: z.boolean().optional(),
 });
 export type UpdatePaymentMethodInput = z.infer<typeof UpdatePaymentMethodInput>;
+
+// ===== Horarios (disponibilidad semanal) =====
+
+/** Día de la semana: 0 = domingo … 6 = sábado (convención de `Date.getDay`). */
+export const Weekday = z.number().int().min(0).max(6);
+export type Weekday = z.infer<typeof Weekday>;
+
+/**
+ * Minuto del día (0 = 00:00 … 1440 = 24:00). Se guarda como entero para comparar
+ * y validar fácil; la web lo formatea a `HH:MM`. No es dinero, así que va como
+ * número (igual criterio que `durationMin`).
+ */
+export const MinutesOfDay = z.number().int().min(0).max(1440);
+
+/**
+ * Un intervalo de apertura de la tienda en un día de la semana. Una tienda puede
+ * tener varios intervalos por día (turno partido); un día sin intervalos = cerrado.
+ */
+export const StoreHour = z.object({
+  id: z.string(),
+  storeId: z.string(),
+  weekday: Weekday,
+  opensMin: MinutesOfDay,
+  closesMin: MinutesOfDay,
+  createdAt: z.string(),
+});
+export type StoreHour = z.infer<typeof StoreHour>;
+
+/** Lista de intervalos de horario de una tienda. */
+export const StoreHourList = z.object({ hours: z.array(StoreHour) });
+export type StoreHourList = z.infer<typeof StoreHourList>;
+
+/** Alta de un intervalo. El cierre debe ser posterior a la apertura. */
+export const CreateStoreHourInput = z
+  .object({
+    weekday: Weekday,
+    opensMin: MinutesOfDay,
+    closesMin: MinutesOfDay,
+  })
+  .refine((d) => d.closesMin > d.opensMin, {
+    message: 'El cierre debe ser posterior a la apertura.',
+    path: ['closesMin'],
+  });
+export type CreateStoreHourInput = z.infer<typeof CreateStoreHourInput>;

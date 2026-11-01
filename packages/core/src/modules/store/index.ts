@@ -9,6 +9,11 @@ export {
   updatePaymentMethod,
 } from './infra/payment-repo';
 export {
+  createStoreHour,
+  deleteStoreHour,
+  listStoreHours,
+} from './infra/store-hours-repo';
+export {
   addStoreMember,
   createStore,
   findUserIdByEmail,

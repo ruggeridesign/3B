@@ -41,16 +41,17 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización).
 - **En curso:** **M2 · Tienda + Catálogo + núcleo de media**, por rebanadas
   verticales siguiendo `data-model.md §7`. HECHAS: **store 1 (alta)**, **2
-  (equipo/roles)**, **3 (métodos de pago)**, **núcleo de `media` (backend)**,
-  **catalog 1 (ítems)**, **2a (categorías)**, **2b (atributos: definiciones +
-  herencia)**, **2c (valores de atributo en ítems)**, **2d (variantes)** y **2e
-  (detalle de servicio)**. Catalog queda con su núcleo completo (taxonomía,
-  atributos, ítems con valores, variantes, detalle de servicio) **+ página de
-  detalle de ítem con imágenes (media), editor de variantes y detalle de servicio**.
-  Trabajo autónomo en curso contra el mapa de datos de `.docs`
+  (equipo/roles)**, **3 (métodos de pago)**, **4 (horarios)**, **núcleo de `media`
+  (backend)**, **catalog 1 (ítems)**, **2a (categorías)**, **2b (atributos:
+  definiciones + herencia)**, **2c (valores de atributo en ítems)**, **2d
+  (variantes)** y **2e (detalle de servicio)**. Catalog queda con su núcleo completo
+  (taxonomía, atributos, ítems con valores, variantes, detalle de servicio) **+
+  página de detalle de ítem con imágenes (media), editor de variantes y detalle de
+  servicio**; store suma **horario semanal** en su página de detalle. Trabajo
+  autónomo en curso contra el mapa de datos de `.docs`
   (`3B_diccionario_de_objetos.md`, 62 entidades/14 dominios): se avanza fase por
   fase creando todos los objetos. Diseño visual: **se difiere** (habrá un skill de
-  UI). Siguiente: `store_hours`/`collections`, **KYC**, y **M3
+  UI). Siguiente: `collections`/`collection_items` (vitrina), **KYC**, y **M3
   inventario** / **M4 descubrimiento** / **M5 pedidos**.
 - **Localhost demo:** `pnpm db:up` + `pnpm --filter @3b/api dev` (8787) +
   `pnpm --filter @3b/web dev` (3000). Usuarios seed, password `Password123!`
@@ -65,7 +66,62 @@
 
 ---
 
-## 2026-11-01 · _(este commit)_ · feat — M2 catalog rebanada 2e: detalle de servicio
+## 2026-11-01 · _(este commit)_ · feat — M2 store rebanada 4: horarios (disponibilidad semanal)
+
+- **Qué:** **horario semanal** de una tienda (`store.store_hours`) modelado como
+  **intervalos de apertura**: cada fila es un tramo (`opens_min`→`closes_min`,
+  minutos desde medianoche) en un `weekday` (0=domingo…6=sábado). Varios tramos por
+  día = turno partido; un día sin filas = cerrado. CRUD anidado `GET/POST
+  /v1/stores/{id}/hours` y `DELETE .../{hourId}`. Web: sección **Horario** en
+  `/mi-tienda/[id]` (grilla por día + alta `HH:MM` + borrar). Seed: la peluquería
+  abre Lun–Vie 09:00–18:00 y Sáb 09:00–13:00 (6 tramos).
+- **Por qué:** cierra el objeto `store_hours` del mapa de `.docs` (disponibilidad);
+  es info que el comprador necesita (cuándo está abierta la tienda) y base para
+  reservas de servicios más adelante.
+- **Impacto / archivos:** `packages/contracts/src/store.ts` (`Weekday`/
+  `MinutesOfDay`/`StoreHour`/`StoreHourList`/`CreateStoreHourInput`) + export en
+  `index.ts`; `packages/db/src/schema/store.ts` (`storeHours`) + migración
+  `0014_yielding_nova.sql` (tabla **+ CHECKs + RLS derivada del store + grants**);
+  `packages/db/src/seed.ts` (horario de la peluquería + resumen con `horarios=`);
+  `packages/core/src/modules/store/infra/store-hours-repo.ts` (list/create/delete)
+  + router (3 rutas) + exports; `apps/web` (`lib/stores` getStoreHours, componente
+  `store-hours`, wiring en la página de detalle);
+  `packages/core/test/integration/store-hours.test.ts`.
+- **Decisiones de diseño:**
+  - **Tiempos como minutos enteros desde medianoche** (`opens_min`/`closes_min`,
+    0..1440), no `time` ni `numeric`: enteros comparables y validables con un CHECK
+    (`closes_min > opens_min`), sin líos de zona horaria. La web formatea a `HH:MM`.
+    Mismo criterio que `duration_min` (2e): lo que no es dinero va como número.
+  - **Intervalos (una fila por tramo), no una fila por día:** soporta turno partido
+    de forma natural. `UNIQUE(store_id, weekday, opens_min)` evita cargar dos veces
+    el mismo tramo (→ 409). Editar un tramo = borrar + crear (sin PATCH).
+  - **RLS: visibilidad derivada del store** (como `item_variants` del ítem):
+    `EXISTS (SELECT 1 FROM store.stores s WHERE s.id = store_id)` queda sujeto a
+    `stores_select`, así que **el horario se ve si se ve la tienda** (público a la
+    comunidad, no solo a miembros — a diferencia de `payment_methods`, que es
+    member-only). Gestionar (crear/borrar) = owner/admin.
+  - **Validación `cierre>apertura` en tres capas:** Zod (`refine` en el contrato),
+    chequeo en el handler (400 con mensaje claro) y CHECK en la DB (backstop →
+    23514 → 400 vía onError). El GET **no gatea** (confía en la RLS), como el listado
+    de ítems.
+  - **Excepciones por fecha (feriados) diferidas:** el objeto del mapa las menciona
+    pero está PROPUESTO; esta rebanada cubre el recurrente semanal y deja las
+    excepciones para una tabla/campo posterior si se aprueba.
+- **Verificación:** `pnpm check` verde (boundaries 281 módulos, unit 5/5);
+  integración db 6/6 + **core 44/44** (+2 de horarios: owner crea/lista + par de
+  comunidad los ve (público), sales bloqueado por RLS, borrar); smoke HTTP 9/9
+  (seed 6 tramos, alta 201, cierre<=apertura 400, tramo repetido 409, weekday fuera
+  de rango 400, delete 204→vuelve a 6, delete inexistente 404).
+- **Estado para retomar:** store queda con alta/equipo/pagos/horarios. Siguiente del
+  mapa de `.docs`: `collections`/`collection_items` (vitrina, PROPUESTO); **KYC**
+  (`identity.kyc_submissions` + `stores.verification_level` + flujo de revisión por
+  admin de comunidad, ya usable con `media`); **M3 inventario**.
+- **Relacionado:** [diccionario de objetos](../.docs/3B_diccionario_de_objetos.md)
+  (local, §store `store_hours`), [data-model §store](architecture/data-model.md),
+  entradas de store 3 (métodos de pago, mismo patrón de router) y catalog 2d
+  (variantes, mismo patrón de RLS derivada del padre).
+
+## 2026-11-01 · `52d775c` · feat — M2 catalog rebanada 2e: detalle de servicio
 
 - **Qué:** **detalle de servicio** de un ítem (`catalog.service_details`, 1:0..1
   con el ítem): `duration_min`, `modality` (`in_store`|`on_site`|`remote`),

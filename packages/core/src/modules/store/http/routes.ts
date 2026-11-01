@@ -13,6 +13,11 @@ import {
   updatePaymentMethod,
 } from '../infra/payment-repo';
 import {
+  createStoreHour,
+  deleteStoreHour,
+  listStoreHours,
+} from '../infra/store-hours-repo';
+import {
   addStoreMember,
   createStore,
   findUserIdByEmail,
@@ -139,6 +144,34 @@ const updatePaymentBody = z
 const paymentParam = z.object({
   id: z.string().openapi({ param: { name: 'id', in: 'path' } }),
   pmId: z.string().openapi({ param: { name: 'pmId', in: 'path' } }),
+});
+
+// ===== Horarios =====
+const weekday = z.number().int().min(0).max(6);
+const minutesOfDay = z.number().int().min(0).max(1440);
+
+const hourOut = z
+  .object({
+    id: z.string(),
+    storeId: z.string(),
+    weekday,
+    opensMin: minutesOfDay,
+    closesMin: minutesOfDay,
+    createdAt: z.string(),
+  })
+  .openapi('StoreHour');
+
+const hourListOut = z
+  .object({ hours: z.array(hourOut) })
+  .openapi('StoreHourList');
+
+const createHourBody = z
+  .object({ weekday, opensMin: minutesOfDay, closesMin: minutesOfDay })
+  .openapi('CreateStoreHour');
+
+const hourParam = z.object({
+  id: z.string().openapi({ param: { name: 'id', in: 'path' } }),
+  hourId: z.string().openapi({ param: { name: 'hourId', in: 'path' } }),
 });
 
 /** Opciones del router de store (config inyectada desde la app). */
@@ -616,6 +649,125 @@ export function storeRouter({ paymentsEncKey }: StoreRouterOptions) {
       if (!existed) {
         return c.json({ error: 'No existe ese método de pago.' }, 404);
       }
+      return c.body(null, 204);
+    },
+  );
+
+  // ===== Horarios =====
+
+  // Listar los intervalos de horario. Públicos: la RLS deja verlos a quien ve la
+  // tienda (miembros + comunidad), así que no gateamos de más.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/stores/{id}/hours',
+      tags: ['store'],
+      summary: 'Horario de la tienda',
+      request: { params: idParam },
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: hourListOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      const hours = await listStoreHours(db, id);
+      return c.json({ hours }, 200);
+    },
+  );
+
+  // Agregar un intervalo. Solo owner/admin. Cierre > apertura (si no, 400). Tramo
+  // repetido (mismo día/apertura) → 409 vía onError.
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/stores/{id}/hours',
+      tags: ['store'],
+      summary: 'Agregar un intervalo de horario',
+      request: {
+        params: idParam,
+        body: { content: { 'application/json': { schema: createHourBody } } },
+      },
+      responses: {
+        201: {
+          description: 'Creado',
+          content: { 'application/json': { schema: hourOut } },
+        },
+        400: {
+          description: 'Rango inválido',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No podés administrar esta tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        409: {
+          description: 'Tramo repetido (mismo día y apertura)',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      const body = c.req.valid('json');
+      if (!(await canManageStore(db, id))) {
+        return c.json({ error: 'No podés administrar esta tienda.' }, 403);
+      }
+      if (body.closesMin <= body.opensMin) {
+        return c.json(
+          { error: 'El cierre debe ser posterior a la apertura.' },
+          400,
+        );
+      }
+      const hour = await createStoreHour(db, { storeId: id, ...body });
+      return c.json(hour, 201);
+    },
+  );
+
+  // Borrar un intervalo. Solo owner/admin.
+  app.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/stores/{id}/hours/{hourId}',
+      tags: ['store'],
+      summary: 'Borrar un intervalo de horario',
+      request: { params: hourParam },
+      responses: {
+        204: { description: 'Borrado' },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No podés administrar esta tienda',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'No existe ese intervalo',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id, hourId } = c.req.valid('param');
+      if (!(await canManageStore(db, id))) {
+        return c.json({ error: 'No podés administrar esta tienda.' }, 403);
+      }
+      const existed = await deleteStoreHour(db, id, hourId);
+      if (!existed) return c.json({ error: 'No existe ese intervalo.' }, 404);
       return c.body(null, 204);
     },
   );

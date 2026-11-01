@@ -1,6 +1,7 @@
 import {
   boolean,
   index,
+  integer,
   pgSchema,
   primaryKey,
   text,
@@ -74,4 +75,31 @@ export const paymentMethods = store.table(
     ...timestamps,
   },
   (t) => [index('payment_methods_store_idx').on(t.storeId)],
+);
+
+/**
+ * Horario semanal de una tienda, como **intervalos de apertura**: cada fila es un
+ * tramo (`opens_min`→`closes_min`, minutos desde medianoche) en un día
+ * (`weekday` 0=domingo…6=sábado). Varios tramos por día = turno partido; un día
+ * sin filas = cerrado. Las excepciones por fecha (feriados) se difieren. La RLS se
+ * deriva del store padre (como las variantes del ítem): se ve si se ve la tienda.
+ * Los CHECK (rango de día/minutos y cierre>apertura) van en la migración.
+ */
+export const storeHours = store.table(
+  'store_hours',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    weekday: integer('weekday').notNull(),
+    opensMin: integer('opens_min').notNull(),
+    closesMin: integer('closes_min').notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    index('store_hours_store_idx').on(t.storeId),
+    // Evita cargar dos veces el mismo tramo (mismo día y misma apertura).
+    unique('store_hours_unique_interval').on(t.storeId, t.weekday, t.opensMin),
+  ],
 );
