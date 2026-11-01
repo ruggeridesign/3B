@@ -40,7 +40,8 @@
   + seed), **Hito B** (Better Auth + RBAC con alcance + RLS + auditoría + tests de
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
   **M2** (tienda+catálogo+media; ver abajo).
-- **En curso:** **M3 · Inventario** y **M4 · Descubrimiento**, por rebanadas.
+- **En curso:** **M3 · Inventario** (r1 hecha) y **M4 · Descubrimiento** (**completo**
+  salvo el proyección de ranking con señales de comportamiento), por rebanadas.
   - **M3 r1 — existencias + movimientos** (`inventory.stock_levels` proyección +
     `inventory.stock_movements` libro de solo inserción; trigger de proyección con
     no-sobreventa; idempotencia; mostrador/ajustes por API y web). **Difieren**:
@@ -64,9 +65,13 @@
     (una fila por `key`, mantenida por trigger desde `items.attributes`); el feed
     acepta `attrs=key:value;…` (AND, match exacto) y `GET /v1/discovery/facets`
     devuelve valores disponibles con conteo (dinámicos, solo publicados). Página
-    Comprar con panel de facetas toggleable. **Difieren**: comunidades **vecinas**
-    (`community_links`) y `ranking.item_scores`.
-  - Siguiente: **M4 r5** (vecinas + ranking) o **M5 pedidos** (carrito/checkout;
+    Comprar con panel de facetas toggleable.
+  - **M4 r5 — cercanía (vecinas) + orden local-first**: el feed ordena por
+    proximidad (comunidad propia → vecina vía `community_links` → otra), luego
+    relevancia/recencia, usando las membresías del usuario (CTE bajo RLS). Satisface
+    "(y vecinas)" y el "ranking básico". **Difiere**: `ranking.item_scores`
+    (proyección con conversión/calidad) hasta **post-M5** (necesita pedidos/reseñas).
+  - **M4 cerrado** (salvo esa proyección). Siguiente: **M5 pedidos** (carrito/checkout;
     trae las **reservas** de stock y enciende worker+Valkey).
 - **M2 (cerrado) · Tienda + Catálogo + núcleo de media**, por rebanadas
   verticales siguiendo `data-model.md §7`. HECHAS: **store 1 (alta)**, **2
@@ -97,7 +102,38 @@
 
 ---
 
-## 2026-11-01 · _(este commit)_ · feat — M4 rebanada 4: filtros por atributo (facetas)
+## 2026-11-01 · _(este commit)_ · feat — M4 rebanada 5: cercanía (vecinas) + orden local-first
+
+- **Qué:** el feed de descubrimiento ahora ordena **local-first**: primero los ítems
+  de la **comunidad propia** del usuario, luego los de **comunidades vecinas**
+  (`community.community_links`), luego el resto; dentro de cada grupo, por relevancia
+  (si hay `q`) y recencia. La proximidad se calcula por usuario con un CTE sobre sus
+  membresías + los links de vecindad (todo bajo RLS). Sin migración (solo orden).
+- **Por qué:** cierra "encuentra y ve ítems/tiendas de su comunidad **(y vecinas)**"
+  y el "ranking básico" del roadmap M4, con un marketplace local-first.
+- **Impacto / archivos:** `packages/core/src/modules/catalog/infra/discovery-repo.ts`
+  (`searchItems`: CTE `me`/`near` + expresión de proximidad en el `ORDER BY`);
+  `packages/core/test/integration/discovery.test.ts` (+1 orden local-first).
+- **Decisiones de diseño:**
+  - **Proximidad inline, sin tabla de scores:** 0 = comunidad propia, 1 = vecina, 2 =
+    otra; se antepone al orden por relevancia/recencia. Es por-usuario (deriva de sus
+    membresías), así que Lucía (Coro) ve primero lo de Coro y Pedro (Punto Fijo) lo
+    de Punto Fijo. Los CTE `me`/`near` quedan sujetos a la RLS de membresías/links.
+  - **`ranking.item_scores` diferido a post-M5:** la proyección con conversión/calidad/
+    novedad necesita datos de **pedidos y reseñas** (M5+); hoy el "ranking básico" es
+    proximidad + recencia (+ relevancia en búsqueda). Evita una tabla hueca.
+- **Verificación:** `pnpm check` verde (boundaries 334 módulos, unit 9/9);
+  integración db 6/6 + **core 67/67** (+1 orden local-first: propia antes que vecina);
+  smoke HTTP 2/2 (Lucía ve taladro/Coro antes que corte/Punto Fijo; Pedro, al revés).
+- **Estado para retomar:** **M4 cerrado** (feed, ficha ítem, storefront, facetas,
+  local-first). Pendiente de M4 solo la proyección `ranking.item_scores` (post-M5).
+  Siguiente hito: **M5 pedidos** — carrito/checkout (`commerce.orders` + idempotencia
+  + snapshots) que **reserva stock** (engancha el `reserved` de M3 + `reservations`)
+  y **enciende worker + Valkey**.
+- **Relacionado:** ROADMAP M4 ("y vecinas", "ranking básico"), entradas de M4 r1–r4,
+  community_links (seed de vecindad).
+
+## 2026-11-01 · `a0eb5b2` · feat — M4 rebanada 4: filtros por atributo (facetas)
 
 - **Qué:** filtros dinámicos por valor de atributo. Proyección `catalog.item_attr_index`
   (una fila por `item_id`+`key`, con `value_text` y `value_num`), mantenida por un

@@ -60,4 +60,15 @@ describe('catalog: descubrimiento (feed + búsqueda)', () => {
     // Todos publicados (tienen published_at).
     expect(items.every((i) => i.publishedAt !== null)).toBe(true);
   });
+
+  it('ordena local-first: comunidad propia antes que vecina', async () => {
+    // Lucía es de Coro. El taladro (Coro = propia) va antes que el corte
+    // (Punto Fijo = vecina de Coro por community_links).
+    const { items } = await asUser(LUCIA, (tx) => searchItems(tx, { ...page }));
+    const iTaladro = items.findIndex((i) => i.title.includes('Taladro'));
+    const iCorte = items.findIndex((i) => i.title.includes('Corte'));
+    expect(iTaladro).toBeGreaterThanOrEqual(0);
+    expect(iCorte).toBeGreaterThanOrEqual(0);
+    expect(iTaladro).toBeLessThan(iCorte);
+  });
 });

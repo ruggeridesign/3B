@@ -85,12 +85,28 @@ export async function searchItems(
   }
 
   const where = sql.join(conds, sql` AND `);
+  // Orden local-first: proximidad (0 = comunidad propia, 1 = vecina, 2 = otra),
+  // luego relevancia (si hay `q`) y recencia. `me`/`near` salen de las membresías
+  // del usuario y `community_links` (ambas bajo RLS).
+  const proximity = sql`(CASE
+    WHEN i.community_id IN (SELECT community_id FROM me) THEN 0
+    WHEN i.community_id IN (SELECT community_id FROM near) THEN 1
+    ELSE 2 END)`;
   const orderBy =
     trimmed && tsq
-      ? sql`ts_rank(i.search_tsv, ${tsq}) DESC, i.published_at DESC NULLS LAST, i.created_at DESC`
-      : sql`i.published_at DESC NULLS LAST, i.created_at DESC`;
+      ? sql`${proximity} ASC, ts_rank(i.search_tsv, ${tsq}) DESC, i.published_at DESC NULLS LAST, i.created_at DESC`
+      : sql`${proximity} ASC, i.published_at DESC NULLS LAST, i.created_at DESC`;
 
   const rows = (await db.execute(sql`
+    WITH me AS (
+      SELECT community_id FROM community.memberships
+      WHERE user_id = authz.current_user_id() AND status = 'active'
+    ),
+    near AS (
+      SELECT DISTINCT cl.neighbor_id AS community_id
+      FROM community.community_links cl
+      WHERE cl.community_id IN (SELECT community_id FROM me)
+    )
     SELECT i.id, i.store_id, s.name AS store_name, s.slug AS store_slug,
            i.community_id, c.name AS community_name, i.category_id, i.kind,
            i.slug, i.title, i.description, i.price_amount, i.currency,
