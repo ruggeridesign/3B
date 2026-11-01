@@ -9,6 +9,7 @@ async function main() {
   // Nota: al agregar un esquema nuevo (pgSchema) hay que sumarlo acá, o el
   // `CREATE SCHEMA` de su migración choca en el siguiente reset.
   const schemas = [
+    'inventory',
     'catalog',
     'store',
     'community',

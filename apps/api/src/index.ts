@@ -13,6 +13,7 @@ import {
   meRouter,
   readIsPlatformAdmin,
 } from '@3b/core/modules/identity';
+import { inventoryRouter } from '@3b/core/modules/inventory';
 import { type AuthorizeOwner, mediaRouter } from '@3b/core/modules/media';
 import { storeRouter } from '@3b/core/modules/store';
 import { systemRouter } from '@3b/core/modules/system';
@@ -117,6 +118,7 @@ app.route('/v1', adminRouter());
 app.route('/v1', storeRouter({ paymentsEncKey: env.PAYMENTS_ENC_KEY }));
 app.route('/v1', mediaRouter({ storage: mediaStorage, authorizeOwner }));
 app.route('/v1', catalogRouter());
+app.route('/v1', inventoryRouter());
 
 // Documento OpenAPI (contrato de la API).
 app.doc('/openapi.json', {

@@ -55,6 +55,15 @@ export {
   StoreRole,
 } from './identity';
 export {
+  ApplyStockMovementInput,
+  StockChannel,
+  StockLevel,
+  StockLevelList,
+  StockMovement,
+  StockMovementKind,
+  StockMovementList,
+} from './inventory';
+export {
   CreateMediaInput,
   CreateMediaResponse,
   Media,

@@ -12,7 +12,8 @@
     "./modules/admin": "./src/modules/admin/index.ts",
     "./modules/store": "./src/modules/store/index.ts",
     "./modules/media": "./src/modules/media/index.ts",
-    "./modules/catalog": "./src/modules/catalog/index.ts"
+    "./modules/catalog": "./src/modules/catalog/index.ts",
+    "./modules/inventory": "./src/modules/inventory/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

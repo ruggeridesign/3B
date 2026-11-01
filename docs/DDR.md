@@ -38,8 +38,17 @@
   `docs/architecture/data-model.md` (modelo de datos **aprobado**, ADR-002).
 - **Hitos cerrados:** base del monorepo, **Hito A** (Postgres/PostGIS + migraciones
   + seed), **Hito B** (Better Auth + RBAC con alcance + RLS + auditoría + tests de
-  aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización).
-- **En curso:** **M2 · Tienda + Catálogo + núcleo de media**, por rebanadas
+  aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
+  **M2** (tienda+catálogo+media; ver abajo).
+- **En curso:** **M3 · Inventario**, por rebanadas. HECHA: **M3 r1 — existencias +
+  movimientos** (`inventory.stock_levels` proyección + `inventory.stock_movements`
+  libro de solo inserción; trigger de proyección con no-sobreventa; idempotencia;
+  mostrador/ajustes por API y web en el detalle de ítem). **Difieren**: reservas
+  (`reservations`, atadas a pedidos/M5) y el **worker + Valkey** (pub/sub,
+  vencimiento de reservas, `stock.changed`) — necesitan la infra del worker, aún no
+  encendida. Siguiente: **M4 descubrimiento** (feed/búsqueda + `item_attr_index`) o
+  **M5 pedidos** (que traerá las reservas de stock).
+- **M2 (cerrado) · Tienda + Catálogo + núcleo de media**, por rebanadas
   verticales siguiendo `data-model.md §7`. HECHAS: **store 1 (alta)**, **2
   (equipo/roles)**, **3 (métodos de pago)**, **4 (horarios)**, **5 (KYC/
   verificación)**, **núcleo de `media` (backend)**, **catalog 1 (ítems)**, **2a
@@ -54,8 +63,7 @@
   fase creando todos los objetos. Diseño visual: **se difiere** (habrá un skill de
   UI). Quedan del mapa M2: `templates` (plantillas de atributos), `item_attr_index`
   (proyección de búsqueda, va con M4), KYC de **movers** (M6) y los de Fase 2
-  (`changesets`). Siguiente sugerido: **M3 inventario** (`stock_levels`/
-  `stock_movements`/`reservations` + worker/Valkey) o **M4 descubrimiento**.
+  (`changesets`).
 - **Localhost demo:** `pnpm db:up` + `pnpm --filter @3b/api dev` (8787) +
   `pnpm --filter @3b/web dev` (3000). Usuarios seed, password `Password123!`
   (carlos@3b.test = Seller con 2 tiendas e ítems; admin@3b.test = superadmin +
@@ -69,7 +77,69 @@
 
 ---
 
-## 2026-11-01 · _(este commit)_ · feat — M2 store rebanada 5: verificación (KYC)
+## 2026-11-01 · _(este commit)_ · feat — M3 rebanada 1: inventario (existencias + movimientos)
+
+- **Qué:** módulo nuevo `inventory`. **Existencias** (`inventory.stock_levels`,
+  proyección por variante: `on_hand`/`reserved`/`low_threshold`/`version`;
+  `available = on_hand - reserved`) + **movimientos** (`inventory.stock_movements`,
+  **libro de solo inserción**: `kind` receipt|sale|adjustment|return, `channel`,
+  `qty` con signo, `reference`, `idempotency_key`, `created_by`). Un **trigger**
+  proyecta el nivel desde cada movimiento (no-sobreventa por CHECK). API anidada:
+  `GET /v1/stores/{id}/items/{itemId}/stock` (niveles por variante), `GET/POST
+  .../variants/{variantId}/movements` (libro + aplicar). Web: sección **Inventario**
+  en el detalle de ítem (disponible/físico por variante + alta de movimiento /
+  mostrador). Seed: el taladro arranca con stock (negro 20, azul 12).
+- **Por qué:** arranca M3 con el corazón del inventario (ledger + proyección) que
+  habilita el mostrador y, más adelante, las reservas (M5) y el stock en vivo.
+- **Impacto / archivos:** `packages/contracts/src/inventory.ts`
+  (`StockMovementKind`/`StockChannel`/`StockLevel(+List)`/`StockMovement(+List)`/
+  `ApplyStockMovementInput`) + exports; `packages/db/src/schema/inventory.ts`
+  (`stockLevels`/`stockMovements`) + `schema/index.ts` + `reset.ts` (dropea
+  `inventory`) + migración `0017_happy_orphan.sql` (schema + 2 tablas + CHECKs +
+  índice único de idempotencia + **RLS + grants** + **trigger de proyección**);
+  `packages/db/src/seed.ts` (stock inicial + resumen `stock=`);
+  `packages/core/src/modules/inventory/**` (domain `validate-movement` + unit test,
+  infra `inventory-repo` con `applyMovement`, http router) + `@3b/core` export map;
+  `apps/api` (monta `inventoryRouter`); `apps/web` (`lib/catalog` getItemStock,
+  componente `item-stock`, wiring); `packages/core/test/integration/inventory.test.ts`.
+- **Decisiones de diseño:**
+  - **Ledger + proyección por trigger:** el movimiento (inmutable) es la fuente de
+    verdad; un trigger `SECURITY DEFINER` mantiene `stock_levels`. La app solo tiene
+    **SELECT** sobre `stock_levels` (la escribe el trigger) y **SELECT/INSERT** sobre
+    `stock_movements` (nunca UPDATE/DELETE): el libro es a prueba de manipulación.
+  - **Trigger UPDATE-primero-luego-INSERT (no `ON CONFLICT`):** _bug atrapado por los
+    tests_ — con `INSERT … ON CONFLICT DO UPDATE`, Postgres evalúa el CHECK sobre la
+    **tupla propuesta** del INSERT **antes** de resolver el conflicto, así que un
+    movimiento negativo (VALUES `on_hand<0`) sobre una variante que ya tenía nivel
+    fallaba el `on_hand>=0` aunque el update diera positivo. Se reescribió a
+    UPDATE-primero (el delta solo se chequea ya sumado) + INSERT con reintento ante
+    carrera del primer alta.
+  - **No-sobreventa en capas:** el servicio pre-chequea `on_hand + qty ≥ 0` y
+    devuelve **409** (mensaje claro); el CHECK `on_hand>=0` es el candado final ante
+    carreras (→ 400 raro). **Idempotencia** por `idempotency_key` único: misma clave
+    ⇒ no re-aplica (devuelve el movimiento ya hecho).
+  - **Signo del delta validado en dominio** (`validate-movement`, puro + unit test):
+    receipt/return > 0, sale < 0, adjustment cualquiera (≠0).
+  - **RLS derivada de variante→ítem→tienda:** ver stock = cualquier miembro; mover
+    stock = owner/admin/catalog. El handler además verifica que la variante sea de la
+    tienda de la ruta (404).
+  - **Reservas y worker/Valkey diferidos:** `reserved` ya existe (default 0) pero su
+    flujo (vencimiento, `stock.changed`, liberar al expirar) requiere el worker +
+    Valkey, aún no encendidos; las reservas se crean al realizar un pedido (M5).
+- **Verificación:** `pnpm check` verde (boundaries 306 módulos, **unit 9/9** con +4
+  del dominio de movimientos); integración db 6/6 + **core 53/53** (+4 inventario:
+  receipt/sale proyectan, no-sobreventa, idempotencia no re-aplica, sales no mueve
+  stock (RLS) y no-miembro no ve el nivel); smoke HTTP 14/14 (receipt/sale,
+  signo 400, sobreventa 409, idempotente, variante ajena 404, sales 403/ve 200).
+- **Estado para retomar:** M3 r1 cierra el ledger. Siguiente: **M4 descubrimiento**
+  (feed + búsqueda `pg_trgm`/`search_tsv` + `item_attr_index`) o **M5 pedidos** (que
+  traerá las **reservas** de stock); el **worker + Valkey** se enciende cuando el
+  primer consumidor (reservas/outbox) lo pida.
+- **Relacionado:** [diccionario de objetos](../.docs/3B_diccionario_de_objetos.md)
+  (local, §inventory), [data-model §inventory y §7](architecture/data-model.md),
+  ROADMAP M3, entrada de catalog 2d (variantes, de donde cuelga el stock).
+
+## 2026-11-01 · `43889ac` · feat — M2 store rebanada 5: verificación (KYC)
 
 - **Qué:** **verificación KYC de tiendas** (`identity.kyc_submissions`, polimórfica
   `subject_type`/`subject_id`; M2 usa `store`) + columna `stores.verification_level`

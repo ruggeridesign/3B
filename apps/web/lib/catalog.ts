@@ -5,6 +5,7 @@ import type {
   ItemVariant,
   Media,
   ServiceDetail,
+  StockLevel,
 } from '@3b/contracts';
 import { cookies } from 'next/headers';
 
@@ -123,6 +124,26 @@ export async function getItemServiceDetail(
     return data.serviceDetail;
   } catch {
     return null;
+  }
+}
+
+/** Existencias (por variante) de un ítem. [] si no sos miembro o falla. */
+export async function getItemStock(
+  storeId: string,
+  itemId: string,
+): Promise<StockLevel[]> {
+  const cookie = await cookieHeader();
+  if (!cookie) return [];
+  try {
+    const res = await fetch(
+      `${API}/v1/stores/${storeId}/items/${itemId}/stock`,
+      { headers: { cookie }, cache: 'no-store' },
+    );
+    if (!res.ok) return [];
+    const data = (await res.json()) as { levels: StockLevel[] };
+    return data.levels;
+  } catch {
+    return [];
   }
 }
 
