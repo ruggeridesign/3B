@@ -65,6 +65,7 @@ export {
 } from './identity';
 export {
   ApplyStockMovementInput,
+  ReservationStatus,
   StockChannel,
   StockLevel,
   StockLevelList,
@@ -82,16 +83,20 @@ export {
   MediaStatus,
   UploadTarget,
 } from './media';
+export type { OrderTransition } from './orders';
 export {
   CheckoutLineInput,
   CreateOrderInput,
+  ORDER_TRANSITIONS,
   Order,
+  OrderActor,
   OrderAddressSnapshot,
   OrderEvent,
   OrderFulfillment,
   OrderItemLine,
   OrderList,
   OrderStatus,
+  OrderTransitionInput,
 } from './orders';
 export {
   AssignableStoreRole,

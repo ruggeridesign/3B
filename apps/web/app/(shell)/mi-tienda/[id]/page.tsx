@@ -7,6 +7,7 @@ import {
   getStoreCollections,
 } from '../../../../lib/catalog';
 import { getMe } from '../../../../lib/me';
+import { getStoreOrders } from '../../../../lib/orders';
 import {
   getPaymentMethods,
   getStore,
@@ -20,6 +21,7 @@ import { StoreCatalog } from '../../../_components/store-catalog';
 import { StoreCollections } from '../../../_components/store-collections';
 import { StoreHours } from '../../../_components/store-hours';
 import { StoreKyc } from '../../../_components/store-kyc';
+import { StoreOrders } from '../../../_components/store-orders';
 import { StorePayments } from '../../../_components/store-payments';
 import { StoreTeam } from '../../../_components/store-team';
 
@@ -65,6 +67,7 @@ export default async function StoreDetail({
     resolvedAttrs,
     collections,
     kyc,
+    orders,
   ] = await Promise.all([
     getStoreMembers(id),
     getPaymentMethods(id),
@@ -75,6 +78,7 @@ export default async function StoreDetail({
     canManageCatalog ? getResolvedAttributes(id) : Promise.resolve([]),
     getStoreCollections(id),
     canManage ? getStoreKyc(id) : Promise.resolve([]),
+    getStoreOrders(id),
   ]);
 
   return (
@@ -89,6 +93,8 @@ export default async function StoreDetail({
           {store.slug}
         </p>
       </div>
+
+      <StoreOrders orders={orders} />
 
       <StoreKyc
         storeId={store.id}

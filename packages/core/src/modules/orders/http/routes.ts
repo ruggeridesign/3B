@@ -5,11 +5,13 @@ import {
   requireSession,
   sessionCtx,
 } from '../../../http';
+import { findTransition } from '../domain/transitions';
 import {
   createOrder,
   getOrder,
   listMyOrders,
   listStoreOrders,
+  transitionOrder,
 } from '../infra/order-repo';
 
 const uuid = z
@@ -118,7 +120,26 @@ const createBody = z
   })
   .openapi('CreateOrder');
 
+const transitionBody = z
+  .object({
+    toStatus: orderStatus,
+    reason: z.string().max(300).optional(),
+  })
+  .openapi('OrderTransition');
+
 const errorSchema = z.object({ error: z.string() }).openapi('OrderError');
+
+/**
+ * Estados alcanzables por la API en M5b (el Seller mueve el pedido hasta `listo`,
+ * el Maker puede cancelar). Las aristas de pago (`pago_*`) se habilitan en M5c y
+ * las de envío/entrega (`en_envio`/`entregado`/`completado`/`retirado`) en M6.
+ */
+const M5B_TARGETS = new Set<string>([
+  'aceptado',
+  'rechazado',
+  'listo',
+  'cancelado',
+]);
 
 const idParam = z.object({
   id: z.string().openapi({ param: { name: 'id', in: 'path' } }),
@@ -287,6 +308,113 @@ export function ordersRouter() {
       }
       const orders = await listStoreOrders(db, id);
       return c.json({ orders }, 200);
+    },
+  );
+
+  // Mover un pedido por la máquina de estados (M5b). Según la arista (§6), la
+  // dispara el Seller (miembro de la tienda) o el Maker (dueño del pedido); las
+  // transiciones del sistema (plazos, Movers) no se disparan por acá.
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/orders/{id}/transition',
+      tags: ['orders'],
+      summary: 'Mover un pedido a otro estado',
+      description:
+        'Aplica una transición válida de la máquina de estados (§6). Reserva ' +
+        'stock al aceptar y lo libera al cancelar. En M5b: aceptado, rechazado, ' +
+        'listo (Seller) y cancelado (Maker).',
+      request: {
+        params: idParam,
+        body: { content: { 'application/json': { schema: transitionBody } } },
+      },
+      responses: {
+        200: {
+          description: 'Pedido movido',
+          content: { 'application/json': { schema: orderOut } },
+        },
+        400: {
+          description: 'Transición inválida o no disponible',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No podés disparar esa transición',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'No existe o no es visible',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        409: {
+          description: 'Stock insuficiente para reservar',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db, userId } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      const { toStatus, reason } = c.req.valid('json');
+
+      // Cargar el pedido (bajo RLS) para conocer su estado, tienda y dueño.
+      const order = await getOrder(db, id);
+      if (!order) return c.json({ error: 'No encontrado.' }, 404);
+
+      // ¿La arista existe en la máquina?
+      const edge = findTransition(order.status, toStatus);
+      if (!edge) {
+        return c.json(
+          { error: `No se puede pasar de "${order.status}" a "${toStatus}".` },
+          400,
+        );
+      }
+      // ¿Está habilitada en M5b?
+      if (!M5B_TARGETS.has(toStatus)) {
+        return c.json(
+          { error: `La transición a "${toStatus}" aún no está disponible.` },
+          400,
+        );
+      }
+      // El actor correcto de la arista (defensa en capas; la RLS es el candado).
+      if (edge.by === 'system') {
+        return c.json({ error: 'Esa transición la hace el sistema.' }, 403);
+      }
+      if (edge.by === 'seller' && !(await isStoreMember(db, order.storeId))) {
+        return c.json({ error: 'No sos miembro de esta tienda.' }, 403);
+      }
+      if (edge.by === 'maker' && order.makerId !== userId) {
+        return c.json({ error: 'Solo el comprador puede hacer eso.' }, 403);
+      }
+
+      const res = await transitionOrder(
+        db,
+        id,
+        userId,
+        toStatus,
+        reason ?? null,
+      );
+      if (res.status === 'not_found') {
+        return c.json({ error: 'No encontrado.' }, 404);
+      }
+      if (res.status === 'invalid_transition') {
+        return c.json(
+          { error: `No se puede pasar de "${res.from}" a "${res.to}".` },
+          400,
+        );
+      }
+      if (res.status === 'insufficient') {
+        return c.json(
+          {
+            error: `Stock insuficiente para reservar (disponible: ${res.available}).`,
+          },
+          409,
+        );
+      }
+      return c.json(res.order, 200);
     },
   );
 

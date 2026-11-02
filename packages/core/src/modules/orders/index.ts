@@ -8,6 +8,14 @@ export {
   type PriceLine,
   toCents,
 } from './domain/pricing';
+export {
+  canTransition,
+  findTransition,
+  nextStatuses,
+  type StockEffect,
+  stockEffect,
+  transitionsFor,
+} from './domain/transitions';
 export { ordersRouter } from './http/routes';
 export {
   type CreateResult,
@@ -15,4 +23,6 @@ export {
   getOrder,
   listMyOrders,
   listStoreOrders,
+  type TransitionResult,
+  transitionOrder,
 } from './infra/order-repo';

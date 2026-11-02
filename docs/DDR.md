@@ -42,7 +42,19 @@
   **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
   la proyección de ranking con señales de comportamiento).
 - **En curso:** **M3 · Inventario** (r1 hecha) y **M5 · Pedido end-to-end**
-  (**M5a — carrito + checkout** hecho), por rebanadas.
+  (**M5a — carrito + checkout** y **M5b — máquina de estados + reserva** hechos),
+  por rebanadas. Siguiente de M5: **M5c — pago por comprobante**.
+  - **M5b — máquina de estados + reserva** (`orders` + `inventory.reservations`):
+    endpoint `POST /v1/orders/{id}/transition` que valida la arista (§6), reserva
+    stock al `aceptado` y lo libera al cancelar, y deja la transición en la bitácora
+    inmutable. Nueva tabla `inventory.reservations` con proyección a
+    `stock_levels.reserved` por trigger definer (no-sobreventa condicionado). Actor
+    por arista en http (Seller = miembro; Maker = dueño; `system` no por API) + RLS
+    como candado. Allowlist M5b: `aceptado`/`rechazado`/`listo` (Seller), `cancelado`
+    (Maker); web con botonera en la ficha + "Pedidos recibidos" en la tienda.
+    **Salida cumplida:** el Seller lleva un pedido hasta `listo`. **Difieren:** las
+    aristas de pago (M5c) y de entrega/retiro + el `consumed` (venta real de
+    `on_hand`) (M6); el **worker + Valkey** (vencer reservas I-5 + `stock.changed`).
   - **M5a — carrito + checkout** (`orders`): módulo nuevo `orders` (esquema
     `orders.orders`/`order_items`/`order_events` + RLS). El carrito es **del
     cliente** (localStorage, multitienda); cada checkout crea **un pedido por
@@ -83,10 +95,8 @@
     relevancia/recencia, usando las membresías del usuario (CTE bajo RLS). Satisface
     "(y vecinas)" y el "ranking básico". **Difiere**: `ranking.item_scores`
     (proyección con conversión/calidad) hasta **post-M5** (necesita pedidos/reseñas).
-  - **M4 cerrado** (salvo esa proyección). **M5a hecho** (ver arriba). Siguiente:
-    **M5b** — máquina de estados del pedido (`realizado→aceptado→…→listo`) que al
-    `aceptado` **reserva** stock (engancha el `reserved` de M3 + `reservations`) y
-    enciende **worker + Valkey**.
+  - **M4 cerrado** (salvo esa proyección). **M5a y M5b hechos** (ver arriba).
+    Siguiente de M5: **M5c** — pago por comprobante (`payments`).
 - **M2 (cerrado) · Tienda + Catálogo + núcleo de media**, por rebanadas
   verticales siguiendo `data-model.md §7`. HECHAS: **store 1 (alta)**, **2
   (equipo/roles)**, **3 (métodos de pago)**, **4 (horarios)**, **5 (KYC/
@@ -116,7 +126,83 @@
 
 ---
 
-## 2026-11-01 · _(este commit)_ · feat — M5a: carrito + checkout (módulo `orders`)
+## 2026-11-02 · _(este commit)_ · feat — M5b: máquina de estados del pedido + reserva de stock
+
+- **Qué:** segunda rebanada de **M5 · Pedido end-to-end**. El pedido deja de ser un
+  libro de solo inserción: ahora se mueve por la **máquina de estados** (§6). Nuevo
+  endpoint `POST /v1/orders/{id}/transition` que valida la arista (dominio),
+  aplica el **efecto sobre el stock** (reserva al `aceptado`, libera al cancelar) y
+  deja la transición en la **bitácora inmutable** (O-2). Se agrega la tabla
+  `inventory.reservations` (M3 diferido, atada a pedidos) con su proyección a
+  `stock_levels.reserved`. En la web, el Seller mueve el pedido desde la ficha
+  (aceptar / rechazar / marcar listo) y el Maker puede cancelar. **Salida de M5b:
+  el Seller lleva un pedido hasta `listo`.**
+- **Por qué:** cumple la _salida_ de M5b del roadmap y engancha pedidos ↔ inventario
+  (O-3/I-5): aceptar un pedido reserva stock sin sobreventa; cancelarlo lo devuelve.
+- **Impacto / archivos:**
+  - `packages/contracts/src/orders.ts`: `OrderActor`, **`ORDER_TRANSITIONS`** (tabla
+    §6, fuente única: arista + actor), `OrderTransitionInput`. `inventory.ts`:
+    `ReservationStatus`. (+exports en `index.ts`.)
+  - `packages/db/src/schema/inventory.ts`: tabla `reservations`. Migración
+    `0022_lonely_venus.sql`: tabla + CHECKs + índice parcial `where status='active'`
+    + **trigger `tg_project_reservation`** (SECURITY DEFINER: al `active` sube
+    `reserved` **solo si hay disponible** —`on_hand - reserved >= qty`—, al
+    `released`/`consumed` lo devuelve) + RLS/grants (SELECT/INSERT/UPDATE a `app`;
+    visible/escribible por el Maker del pedido o un miembro de la tienda). Además
+    **amplía `orders`**: `GRANT UPDATE`, policy `orders_update` (Maker o miembro) y
+    reescribe `order_events_insert` para admitir a la tienda (antes solo el Maker).
+  - `packages/core/src/modules/inventory/infra/reservations.ts`: `reserveForOrder`
+    (idempotente, pre-chequea disponibilidad → `insufficient`) / `releaseForOrder`
+    (+exports). Solo reserva variantes con stock **rastreado**.
+  - `packages/core/src/modules/orders/`: `domain/transitions.ts`
+    (`canTransition`/`nextStatuses`/`transitionsFor`/`stockEffect`, puro; +test 5/5),
+    `infra/order-repo.ts` (`transitionOrder`: valida arista → efecto de stock vía la
+    **API pública de `inventory`** → `UPDATE status` → evento), `http/routes.ts`
+    (`POST /orders/{id}/transition`: allowlist M5b + actor por arista), `index.ts`.
+  - `apps/web`: `lib/orders.ts` (`getStoreOrders`, `orderActions` derivadas de
+    `ORDER_TRANSITIONS`), `_components/order-actions.tsx` (botonera cliente),
+    `_components/store-orders.tsx` (pedidos recibidos), cableado en
+    `comprar/pedidos/[id]` (acciones según rol del viewer) y `mi-tienda/[id]`.
+- **Decisiones de diseño:**
+  - **Máquina en contracts, lógica en domain:** `ORDER_TRANSITIONS` (grafo + actor)
+    es la fuente única; `@3b/core/orders/domain` agrega las funciones puras y el
+    `stockEffect`; la web filtra por actor para los botones. Sin duplicar el grafo.
+  - **`reservations` la escribe `inventory`, no `orders`:** orders invoca
+    `reserveForOrder`/`releaseForOrder` por el `index.ts` de inventory (regla
+    "un módulo importa solo el index de otro"). Nadie escribe tablas ajenas.
+  - **Proyección por trigger definer:** `app` no escribe `stock_levels`; el trigger
+    (owner) sube/baja `reserved`. El `UPDATE` condicionado (`>= qty`) es el candado
+    final de no-sobreventa; el servicio pre-chequea para devolver **409** limpio.
+  - **Actor por arista en la capa http** (Seller = miembro de la tienda; Maker =
+    dueño; `system` no se dispara por API), con la **RLS como candado** (solo un
+    involucrado puede actualizar el pedido / insertar evento / escribir reserva).
+  - **Allowlist M5b:** el endpoint solo habilita `aceptado`/`rechazado`/`listo`
+    (Seller) y `cancelado` (Maker). Las aristas de **pago** (`pago_*`) van a **M5c**
+    y las de **entrega/retiro** (`en_envio`/`entregado`/`retirado`/`completado`) a
+    **M6**. El `expires_at` ya se graba pensando en el worker.
+  - **`consumed` (descuento real de `on_hand`) diferido a M6:** al `listo` el stock
+    queda **reservado**; la venta se concreta con la entrega/PIN (M6).
+  - **Worker + Valkey diferidos** a una rebanada de infra propia (vencimiento
+    automático de reservas I-5 + `stock.changed`); M5b es 100% síncrono, que es lo
+    que pide su _salida_. También es el pendiente que arrastra M3.
+- **Verificación:** `pnpm check` **verde** (typecheck 10/10, unit **19/19** con
+  transitions 5/5, boundaries **353 módulos** sin violaciones). `pnpm
+  test:integration`: db 6/6 + **core 76/76** (+5 de M5b: reserva al aceptar,
+  liberación al cancelar, transición inválida, llega a `listo`, RLS tercero no mueve).
+  Smoke HTTP: Carlos (Seller) acepta el pedido demo → `reserved` 0→1; inválida
+  (`aceptado→completado`) 400; Carlos intentando `cancelado` (arista del Maker) **403**;
+  Lucía (Maker) cancela 200 → `reserved` 1→0; Pedro (tercero) **404**.
+- **Estado para retomar:** **M5b cerrado** (el Seller mueve el pedido hasta `listo`,
+  reservando/liberando stock). Siguiente: **M5c — pago por comprobante** (`payments`:
+  `payment_reports` con referencia única P-1, `fx_rate_ves` congelado P-2, confirmar/
+  rechazar del Seller → `pago_reportado`/`pago_confirmado`/`pago_rechazado`). Al
+  habilitar M5c hay que **ampliar el allowlist** del endpoint de transición. Pendiente
+  de infra: **worker + Valkey** (vencer reservas + `stock.changed`) y el **`consumed`**
+  (venta) del flujo de entrega en M6.
+- **Relacionado:** ROADMAP M5 (M5a–M5d), `data-model.md` §3 (orders/reservations),
+  §5 (O-1…O-4, I-5), §6 (máquina de estados); entradas de M5a y M3 r1.
+
+## 2026-11-01 · `7033eb9` · feat — M5a: carrito + checkout (módulo `orders`)
 
 - **Qué:** arranca **M5 · Pedido end-to-end** con su primera rebanada, **M5a**.
   Módulo nuevo `orders`: el Maker arma un carrito (cliente, multitienda) y hace

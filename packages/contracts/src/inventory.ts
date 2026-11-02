@@ -5,9 +5,17 @@ import { z } from 'zod';
  * proyección) + **movimientos** (`stock_movements`, libro de solo inserción).
  * Invariante: `available = on_hand - reserved`; todo cambio de stock nace de un
  * movimiento inmutable y la proyección la mantiene un trigger. Las **reservas**
- * (atadas a pedidos) y el **worker/Valkey** (vencimiento, `stock.changed`) llegan
- * en rebanadas siguientes.
+ * (atadas a pedidos) se agregan en M5b; el **worker/Valkey** (vencimiento
+ * automático, `stock.changed`) llega en una rebanada de infra posterior.
  */
+
+/**
+ * Estado de una reserva de stock (M5b). `active` descuenta de `available` (sube
+ * `reserved`); `released` la devuelve (pedido cancelado antes de envío); `consumed`
+ * la convierte en venta al concretarse la entrega (M6). Fuente del CHECK en la DB.
+ */
+export const ReservationStatus = z.enum(['active', 'consumed', 'released']);
+export type ReservationStatus = z.infer<typeof ReservationStatus>;
 
 /** Tipo de movimiento de stock. El signo de `qty` se valida contra el tipo. */
 export const StockMovementKind = z.enum([

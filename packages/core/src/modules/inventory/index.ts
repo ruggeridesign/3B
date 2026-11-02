@@ -9,3 +9,9 @@ export {
   listLevelsByItem,
   listMovements,
 } from './infra/inventory-repo';
+export {
+  type ReserveLine,
+  type ReserveResult,
+  releaseForOrder,
+  reserveForOrder,
+} from './infra/reservations';

@@ -8,6 +8,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { timestamps } from './_shared';
 import { itemVariants } from './catalog';
+import { orderRecords } from './orders';
 
 // Esquema `inventory`: existencias y libro de movimientos por variante.
 export const inventory = pgSchema('inventory');
@@ -52,4 +53,34 @@ export const stockMovements = inventory.table(
       .defaultNow(),
   },
   (t) => [index('stock_movements_variant_idx').on(t.variantId, t.createdAt)],
+);
+
+/**
+ * Reserva de stock atada a un pedido (M5b, O-3). Al `aceptado` se crea una fila
+ * `active` por línea con variante rastreada → el trigger sube `reserved` (si hay
+ * disponible). Al cancelar antes del envío pasa a `released` (devuelve `reserved`);
+ * al concretarse la entrega pasará a `consumed` (venta, M6). `expires_at` deja
+ * lista la expiración automática que liberará el worker en una rebanada posterior.
+ * La escribe el módulo `inventory`; la RLS la acota al Maker del pedido o a un
+ * miembro de la tienda. `app` tiene SELECT/INSERT/UPDATE (nunca borra).
+ */
+export const reservations = inventory.table(
+  'reservations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orderId: uuid('order_id')
+      .notNull()
+      .references(() => orderRecords.id, { onDelete: 'cascade' }),
+    variantId: uuid('variant_id')
+      .notNull()
+      .references(() => itemVariants.id, { onDelete: 'cascade' }),
+    qty: integer('qty').notNull(),
+    status: text('status').notNull().default('active'), // active | consumed | released
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    index('reservations_order_idx').on(t.orderId),
+    index('reservations_variant_idx').on(t.variantId),
+  ],
 );

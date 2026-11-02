@@ -107,6 +107,58 @@ export type Order = z.infer<typeof Order>;
 export const OrderList = z.object({ orders: z.array(Order) });
 export type OrderList = z.infer<typeof OrderList>;
 
+/**
+ * Quién dispara una transición de la máquina de estados (§6). `seller` = miembro
+ * de la tienda receptora; `maker` = dueño del pedido; `system` = automático
+ * (worker/plazos, Movers) — no lo dispara una persona por la API.
+ */
+export const OrderActor = z.enum(['seller', 'maker', 'system']);
+export type OrderActor = z.infer<typeof OrderActor>;
+
+/** Una arista de la máquina de estados del pedido (§6). */
+export interface OrderTransition {
+  from: OrderStatus;
+  to: OrderStatus;
+  by: OrderActor;
+}
+
+/**
+ * **Fuente única** de la máquina de estados del pedido de productos (§6 del
+ * modelo de datos). Cada arista indica de qué estado a qué estado y **quién** la
+ * dispara. La lógica pura (validar, próximos estados, efecto sobre stock) vive en
+ * `@3b/core/modules/orders` (domain); la cara web la filtra por actor para armar
+ * los botones. Las aristas de pago (`pago_*`) se habilitan en M5c y las de envío
+ * (`en_envio`/`entregado`/`completado`) en M6 (actor `system`/Mover).
+ */
+export const ORDER_TRANSITIONS: readonly OrderTransition[] = [
+  { from: 'realizado', to: 'aceptado', by: 'seller' },
+  { from: 'realizado', to: 'rechazado', by: 'seller' },
+  { from: 'realizado', to: 'expirado', by: 'system' },
+  { from: 'aceptado', to: 'pago_reportado', by: 'maker' },
+  { from: 'aceptado', to: 'listo', by: 'seller' }, // pago contra entrega
+  { from: 'aceptado', to: 'cancelado', by: 'maker' },
+  { from: 'pago_reportado', to: 'pago_confirmado', by: 'seller' },
+  { from: 'pago_reportado', to: 'pago_rechazado', by: 'seller' },
+  { from: 'pago_reportado', to: 'cancelado', by: 'maker' },
+  { from: 'pago_confirmado', to: 'en_preparacion', by: 'seller' },
+  { from: 'en_preparacion', to: 'listo', by: 'seller' },
+  { from: 'listo', to: 'retirado', by: 'seller' }, // retiro en tienda
+  { from: 'listo', to: 'en_envio', by: 'system' }, // Mover asignado (M6)
+  { from: 'en_envio', to: 'entregado', by: 'system' }, // valida PIN (M6)
+  { from: 'entregado', to: 'completado', by: 'system' }, // 48h sin disputa
+  { from: 'entregado', to: 'en_disputa', by: 'maker' },
+];
+
+/**
+ * Entrada para mover un pedido a otro estado. `toStatus` debe ser alcanzable
+ * desde el estado actual según `ORDER_TRANSITIONS`; `reason` queda en la bitácora.
+ */
+export const OrderTransitionInput = z.object({
+  toStatus: OrderStatus,
+  reason: z.string().max(300).optional(),
+});
+export type OrderTransitionInput = z.infer<typeof OrderTransitionInput>;
+
 /** Una línea del carrito al hacer checkout (variante + cantidad). */
 export const CheckoutLineInput = z.object({
   variantId: uuid,

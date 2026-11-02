@@ -1,7 +1,13 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getMe } from '../../../../../lib/me';
-import { getOrder, ORDER_STATUS_LABEL } from '../../../../../lib/orders';
+import {
+  getOrder,
+  ORDER_STATUS_LABEL,
+  type OrderAction,
+  orderActions,
+} from '../../../../../lib/orders';
+import { OrderActions } from '../../../../_components/order-actions';
 
 const FULFILLMENT_LABEL: Record<string, string> = {
   pickup: 'Retiro en tienda',
@@ -42,6 +48,21 @@ export default async function PedidoDetalle({
     );
   }
 
+  // Rol del viewer frente a ESTE pedido: miembro de la tienda (Seller) y/o dueño
+  // (Maker). Según eso se ofrecen las transiciones válidas (la API gatea igual).
+  const isSeller = me.stores.some((s) => s.id === o.storeId);
+  const isMaker = o.makerId === me.user.id;
+  const actionMap = new Map<string, OrderAction>();
+  if (isSeller) {
+    for (const a of orderActions(o.status, 'seller'))
+      actionMap.set(a.toStatus, a);
+  }
+  if (isMaker) {
+    for (const a of orderActions(o.status, 'maker'))
+      actionMap.set(a.toStatus, a);
+  }
+  const actions = [...actionMap.values()];
+
   return (
     <div className="space-y-6">
       <div className="space-y-1">
@@ -59,6 +80,8 @@ export default async function PedidoDetalle({
           {fmtDateTime(o.createdAt)}
         </p>
       </div>
+
+      {actions.length > 0 && <OrderActions orderId={o.id} actions={actions} />}
 
       <section className="space-y-2">
         <h2 className="font-medium text-foreground">Líneas</h2>

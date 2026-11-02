@@ -1,6 +1,13 @@
-import type { CreateOrderInput, Order, OrderItemLine } from '@3b/contracts';
+import type {
+  CreateOrderInput,
+  Order,
+  OrderItemLine,
+  OrderStatus,
+} from '@3b/contracts';
 import { type AppTransaction, and, desc, eq, inArray, schema } from '@3b/db';
+import { releaseForOrder, reserveForOrder } from '../../inventory';
 import { computeTotals, type PriceLine } from '../domain/pricing';
+import { canTransition, stockEffect } from '../domain/transitions';
 
 type OrderRow = typeof schema.orderRecords.$inferSelect;
 type ItemRow = typeof schema.orderItems.$inferSelect;
@@ -297,5 +304,88 @@ export async function createOrder(
   });
 
   const full = await getOrder(db, created.id);
+  return { status: 'ok', order: full as Order };
+}
+
+/** Resultado de una transición de estado (para mapear a HTTP sin 500). */
+export type TransitionResult =
+  | { status: 'ok'; order: Order }
+  | { status: 'not_found' }
+  | { status: 'invalid_transition'; from: OrderStatus; to: OrderStatus }
+  | { status: 'insufficient'; variantId: string; available: number };
+
+/**
+ * Mueve un pedido a `toStatus` por la máquina de estados (§6, M5b). Valida que la
+ * arista exista (dominio), aplica el **efecto sobre el stock** (reservar al
+ * `aceptado`, liberar al cancelar/rechazar) vía la API pública de `inventory`,
+ * actualiza `status` y deja la fila en la bitácora (O-2). Todo en la transacción
+ * del request (atómico). La RLS es el candado final: solo el Maker dueño o un
+ * miembro de la tienda puede actualizar el pedido e insertar el evento. El actor
+ * correcto de cada arista (Seller/Maker) lo gatea la capa http.
+ */
+export async function transitionOrder(
+  db: AppTransaction,
+  orderId: string,
+  actorId: string,
+  toStatus: OrderStatus,
+  reason: string | null,
+): Promise<TransitionResult> {
+  // Cargar cabecera (bajo RLS: si no la ve, es como si no existiera).
+  const [head] = await db
+    .select({
+      id: schema.orderRecords.id,
+      status: schema.orderRecords.status,
+    })
+    .from(schema.orderRecords)
+    .where(eq(schema.orderRecords.id, orderId))
+    .limit(1);
+  if (!head) return { status: 'not_found' };
+
+  const from = head.status as OrderStatus;
+  if (!canTransition(from, toStatus)) {
+    return { status: 'invalid_transition', from, to: toStatus };
+  }
+
+  // Efecto sobre el stock antes de cambiar el estado (si falla, nada se aplica).
+  const effect = stockEffect(toStatus);
+  if (effect === 'reserve') {
+    const lines = await db
+      .select({
+        variantId: schema.orderItems.variantId,
+        qty: schema.orderItems.qty,
+      })
+      .from(schema.orderItems)
+      .where(eq(schema.orderItems.orderId, orderId));
+    const reservable = lines
+      .filter(
+        (l): l is { variantId: string; qty: number } => l.variantId !== null,
+      )
+      .map((l) => ({ variantId: l.variantId, qty: l.qty }));
+    const res = await reserveForOrder(db, orderId, reservable);
+    if (res.status === 'insufficient') {
+      return {
+        status: 'insufficient',
+        variantId: res.variantId,
+        available: res.available,
+      };
+    }
+  } else if (effect === 'release') {
+    await releaseForOrder(db, orderId);
+  }
+
+  await db
+    .update(schema.orderRecords)
+    .set({ status: toStatus, updatedAt: new Date() })
+    .where(eq(schema.orderRecords.id, orderId));
+
+  await db.insert(schema.orderEvents).values({
+    orderId,
+    fromStatus: from,
+    toStatus,
+    actorId,
+    reason,
+  });
+
+  const full = await getOrder(db, orderId);
   return { status: 'ok', order: full as Order };
 }
