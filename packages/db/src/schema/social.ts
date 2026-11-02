@@ -3,16 +3,18 @@ import {
   integer,
   pgSchema,
   text,
+  timestamp,
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { timestamps } from './_shared';
+import { items } from './catalog';
 import { communities } from './community';
 import { users } from './identity';
 import { orderRecords } from './orders';
+import { stores } from './store';
 
-// Esquema `social`: reseñas verificadas (nacen de un pedido `completado`).
-// M5d.2 — reseñas. Las preguntas públicas (`questions`) llegan después.
+// Esquema `social`: reseñas verificadas (M5d.2) + preguntas públicas (M5d.3).
 export const social = pgSchema('social');
 
 /**
@@ -53,5 +55,42 @@ export const reviews = social.table(
     ),
     index('reviews_subject_idx').on(t.subjectType, t.subjectId),
     index('reviews_community_idx').on(t.communityId),
+  ],
+);
+
+/**
+ * Pregunta pública sobre un ítem publicado. La hace cualquiera que vea el ítem
+ * (community member); la **responde la tienda**. `store_id`/`community_id` se
+ * denormalizan del ítem para la RLS (answer = miembro de la tienda; visibilidad
+ * por comunidad, como el descubrimiento). `author_name` se congela (snapshot).
+ */
+export const questions = social.table(
+  'questions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id, { onDelete: 'cascade' }),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id, { onDelete: 'restrict' }),
+    authorId: uuid('author_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    authorName: text('author_name'),
+    body: text('body').notNull(),
+    answer: text('answer'),
+    answeredBy: uuid('answered_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    answeredAt: timestamp('answered_at', { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    index('questions_item_idx').on(t.itemId, t.createdAt),
+    index('questions_community_idx').on(t.communityId),
   ],
 );

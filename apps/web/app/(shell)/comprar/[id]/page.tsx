@@ -3,7 +3,9 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getPublicItem } from '../../../../lib/catalog';
 import { getMe } from '../../../../lib/me';
+import { getItemQuestions } from '../../../../lib/social';
 import { ItemBuy } from '../../../_components/item-buy';
+import { ItemQuestions } from '../../../_components/item-questions';
 
 const MODALITY: Record<string, string> = {
   in_store: 'En el local',
@@ -27,6 +29,7 @@ export default async function ItemFicha({
 
   const { id } = await params;
   const it = await getPublicItem(id);
+  const questions = await getItemQuestions(id);
   if (!it) {
     return (
       <div className="space-y-4">
@@ -124,6 +127,12 @@ export default async function ItemFicha({
           <ItemBuy item={it} />
         </section>
       )}
+
+      <ItemQuestions
+        itemId={it.id}
+        questions={questions}
+        isStoreMember={me.stores.some((s) => s.id === it.storeId)}
+      />
     </div>
   );
 }

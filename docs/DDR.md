@@ -43,10 +43,13 @@
   la proyección de ranking con señales de comportamiento).
 - **En curso:** **M3 · Inventario** (r1 hecha) y **M5 · Pedido end-to-end**
   (**M5a — carrito**, **M5b — máquina de estados + reserva**, **M5c — pago por
-  comprobante**, **M5d.1 — chat del pedido** y **M5d.2 — reseñas** hechos). **M5d
-  completo** (pedido `completado` con reseña y un hilo de chat). **M5 cerrado salvo
-  infra** (worker/Valkey) y pendientes a M6. Siguiente: **M6 · Envíos** (o cerrar los
-  pendientes de infra de M5).
+  comprobante**, **M5d.1 — chat**, **M5d.2 — reseñas** y **M5d.3 — preguntas**
+  hechos). **M5d completo** (pedido `completado` con reseña, un hilo de chat y Q&A de
+  ítems). **Cerrando M5 (features):** falta `reports` (moderación) y la **captura del
+  pago** (media→pedido); el **worker/Valkey** queda como su propia rebanada de infra.
+  - **M5d.3 — preguntas públicas** (`social.questions`): Q&A sobre un ítem publicado;
+    cualquiera que lo ve pregunta, la tienda responde. RLS: SELECT por comunidad,
+    answer = miembro de la tienda. Web: bloque en la ficha de ítem.
   - **M5d.2 — reseñas verificadas** (`social`): módulo nuevo. Al `completado` el
     comprador reseña la **tienda** (rating 1–5 + comentario; una por pedido y
     destinatario, D-04); se publica en el storefront (promedio + conteo). Para llegar
@@ -158,7 +161,45 @@
 
 ---
 
-## 2026-11-02 · _(este commit)_ · feat — M5d.2: reseñas verificadas al completado (módulo `social`)
+## 2026-11-02 · _(este commit)_ · feat — M5d.3: preguntas públicas de ítem (`social.questions`)
+
+- **Qué:** tercera rebanada de **M5d**. Preguntas públicas sobre un ítem publicado:
+  cualquiera que ve el ítem **pregunta**; la **tienda responde**. Tabla
+  `social.questions` (con `store_id`/`community_id` denormalizados del ítem y
+  `author_name` congelado). API: `GET /v1/items/{id}/questions`,
+  `POST /v1/items/{id}/questions`, `POST /v1/questions/{id}/answer`. Web: bloque de
+  Preguntas en la ficha pública del ítem (preguntar; responder si sos de la tienda).
+- **Por qué:** es el feature que faltaba del listado de M5d en el roadmap; completa
+  la superficie **social** de M5 (reseñas + preguntas).
+- **Impacto / archivos:**
+  - `packages/contracts/src/social.ts` (+exports): `Question`, `QuestionList`,
+    `AskQuestionInput`, `AnswerQuestionInput`.
+  - `packages/db/src/schema/social.ts` (+migración `0026_productive_diamondback.sql`):
+    tabla `questions` + CHECK (body 3–1000) + RLS/grants (SELECT por comunidad o
+    autor; INSERT = quien ve la comunidad, como sí mismo; **UPDATE/answer = miembro
+    de la tienda**).
+  - `packages/core/src/modules/social/`: `infra/question-repo.ts` (`askQuestion`
+    —resuelve ítem publicado/visible y denormaliza store/community—,
+    `listItemQuestions`, `findQuestion`, `answerQuestion`), rutas en `http/routes.ts`,
+    +exports en `index.ts`. (`socialRouter` ya montado en `apps/api`.)
+  - `apps/web`: `lib/social.ts` (`getItemQuestions`),
+    `_components/item-questions.tsx` (preguntar + responder), cableado en
+    `comprar/[id]`.
+- **Decisiones de diseño:**
+  - **Pregunta pública, respuesta de la tienda:** SELECT por comunidad (como el
+    descubrimiento); la **respuesta** (UPDATE) la gatea `is_store_member` (http) con
+    la RLS como candado. `author_name` congelado (evita joins cruzados). El ítem debe
+    estar **publicado** para preguntar (lo valida el servicio bajo RLS).
+  - **Sin contención de stock:** las preguntas no tocan pedidos/stock, así que el test
+    usa el TALADRO del seed directamente (a diferencia de reseñas).
+- **Verificación:** `pnpm check` **verde** (lint, typecheck 10/10, unit 19/19,
+  boundaries **379 módulos**). `pnpm test:integration`: db 6/6 + **core 95/95** (+4 de
+  M5d.3: preguntar + ver, responder, no-miembro no responde (RLS), no-publicado no
+  admite preguntas).
+- **Relacionado:** ROADMAP M5 (M5d), `data-model.md` §2.5 (questions); entradas de
+  M5d.1/M5d.2.
+
+## 2026-11-02 · `b0cefcb` · feat — M5d.2: reseñas verificadas al completado (módulo `social`)
 
 - **Qué:** segunda rebanada de **M5d** (cierra la _salida_ de M5d). Módulo nuevo
   `social`: al `completado` el comprador (Maker) deja **una** reseña de la **tienda**

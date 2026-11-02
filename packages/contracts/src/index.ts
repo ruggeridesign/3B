@@ -114,7 +114,11 @@ export {
   ReviewPaymentInput,
 } from './payments';
 export {
+  AnswerQuestionInput,
+  AskQuestionInput,
   CreateReviewInput,
+  Question,
+  QuestionList,
   Review,
   ReviewList,
   ReviewSubjectType,

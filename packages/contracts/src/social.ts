@@ -45,3 +45,35 @@ export const CreateReviewInput = z.object({
   body: z.string().max(1000).optional(),
 });
 export type CreateReviewInput = z.infer<typeof CreateReviewInput>;
+
+/**
+ * Pregunta pública sobre un ítem publicado. La hace cualquiera que vea el ítem;
+ * la **responde la tienda** (`answer`/`answeredAt`). Visible a quien ve el ítem.
+ */
+export const Question = z.object({
+  id: z.string(),
+  itemId: z.string(),
+  authorId: z.string(),
+  authorName: z.string().nullable(),
+  body: z.string(),
+  answer: z.string().nullable(),
+  answeredAt: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type Question = z.infer<typeof Question>;
+
+/** Lista de preguntas de un ítem (más recientes primero). */
+export const QuestionList = z.object({ questions: z.array(Question) });
+export type QuestionList = z.infer<typeof QuestionList>;
+
+/** Hacer una pregunta pública sobre un ítem. */
+export const AskQuestionInput = z.object({
+  body: z.string().min(3).max(1000),
+});
+export type AskQuestionInput = z.infer<typeof AskQuestionInput>;
+
+/** La tienda responde una pregunta. */
+export const AnswerQuestionInput = z.object({
+  answer: z.string().min(1).max(2000),
+});
+export type AnswerQuestionInput = z.infer<typeof AnswerQuestionInput>;
