@@ -169,6 +169,13 @@
       "when": 1793627012122,
       "tag": "0023_lumpy_slipstream",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793642195539,
+      "tag": "0024_complete_sleepwalker",
+      "breakpoints": true
     }
   ]
 }

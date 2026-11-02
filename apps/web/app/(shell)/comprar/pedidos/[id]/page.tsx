@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getMe } from '../../../../../lib/me';
+import { getOrderThread } from '../../../../../lib/messaging';
 import {
   getOrder,
   getOrderPayments,
@@ -9,6 +10,7 @@ import {
   orderActions,
 } from '../../../../../lib/orders';
 import { OrderActions } from '../../../../_components/order-actions';
+import { OrderChat } from '../../../../_components/order-chat';
 import { PaymentPanel } from '../../../../_components/payment-panel';
 
 const FULFILLMENT_LABEL: Record<string, string> = {
@@ -51,6 +53,7 @@ export default async function PedidoDetalle({
   }
 
   const payments = await getOrderPayments(id);
+  const thread = await getOrderThread(id);
 
   // Rol del viewer frente a ESTE pedido: miembro de la tienda (Seller) y/o dueño
   // (Maker). Según eso se ofrecen las transiciones válidas (la API gatea igual).
@@ -105,6 +108,14 @@ export default async function PedidoDetalle({
           })}{' '}
           Bs
         </p>
+      )}
+
+      {thread && (
+        <OrderChat
+          orderId={o.id}
+          messages={thread.messages}
+          meId={me.user.id}
+        />
       )}
 
       <section className="space-y-2">

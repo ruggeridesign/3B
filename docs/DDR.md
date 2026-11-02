@@ -42,8 +42,18 @@
   **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
   la proyección de ranking con señales de comportamiento).
 - **En curso:** **M3 · Inventario** (r1 hecha) y **M5 · Pedido end-to-end**
-  (**M5a — carrito**, **M5b — máquina de estados + reserva** y **M5c — pago por
-  comprobante** hechos), por rebanadas. Siguiente de M5: **M5d — chat + social**.
+  (**M5a — carrito**, **M5b — máquina de estados + reserva**, **M5c — pago por
+  comprobante** y **M5d.1 — chat del pedido** hechos), por rebanadas. Siguiente de
+  M5: **M5d.2 — social** (reseñas verificadas + preguntas públicas).
+  - **M5d.1 — chat contextual** (`messaging`): módulo nuevo. Hilo de chat **por
+    pedido** entre comprador y tienda (`conversations`, una por `(context,
+    context_id)`; contexto `order`) + `messages` **particionada por mes** (D-08,
+    DDL a mano). API: `GET /v1/orders/{id}/conversation` (crea el hilo perezoso),
+    `POST …/messages`, `POST …/conversation/read`. RLS derivada del pedido (sin
+    materializar `participants`); mensajes derivan de la conversación padre. Web:
+    panel de chat en la ficha del pedido (recibo "Visto"). **Difieren:** otros
+    contextos (ítem/envío/tienda), `participants`, y las particiones mensuales +
+    retención 90 d (worker).
   - **M5c — pago por comprobante** (`payments`): módulo nuevo. El Maker reporta un
     pago (`payment_reports`, **referencia única** P-1) sobre un pedido `aceptado` →
     `pago_reportado`, congelando `fx_rate_ves` (P-2, tabla `fx_rates`); el Seller lo
@@ -105,8 +115,8 @@
     relevancia/recencia, usando las membresías del usuario (CTE bajo RLS). Satisface
     "(y vecinas)" y el "ranking básico". **Difiere**: `ranking.item_scores`
     (proyección con conversión/calidad) hasta **post-M5** (necesita pedidos/reseñas).
-  - **M4 cerrado** (salvo esa proyección). **M5a, M5b y M5c hechos** (ver arriba).
-    Siguiente de M5: **M5d** — conversación + social (`messaging` + `social`).
+  - **M4 cerrado** (salvo esa proyección). **M5a, M5b, M5c y M5d.1 hechos** (ver
+    arriba). Siguiente de M5: **M5d.2** — social (`social`: reseñas + preguntas).
 - **M2 (cerrado) · Tienda + Catálogo + núcleo de media**, por rebanadas
   verticales siguiendo `data-model.md §7`. HECHAS: **store 1 (alta)**, **2
   (equipo/roles)**, **3 (métodos de pago)**, **4 (horarios)**, **5 (KYC/
@@ -136,7 +146,64 @@
 
 ---
 
-## 2026-11-02 · _(este commit)_ · feat — M5c: pago por comprobante (módulo `payments`)
+## 2026-11-02 · _(este commit)_ · feat — M5d.1: chat contextual del pedido (módulo `messaging`)
+
+- **Qué:** primera rebanada de **M5d**. Módulo nuevo `messaging`: hilo de chat
+  **por pedido** entre el comprador (Maker) y la tienda (Seller). `conversations`
+  (una por `(context, context_id)`; contexto `order` cableado) + `messages`
+  (**particionada por mes**, D-08). Endpoints: abrir el hilo (`GET
+  /v1/orders/{id}/conversation`, crea la conversación de forma perezosa), enviar
+  (`POST /v1/orders/{id}/messages`) y marcar leído (`POST
+  /v1/orders/{id}/conversation/read`). Web: panel de chat en la ficha del pedido
+  (mis mensajes a la derecha, recibo "Visto").
+- **Por qué:** avanza la _salida_ de M5d ("… y un hilo de chat"); deja el carril de
+  conversación contextual listo para colgar otros contextos (ítem/envío/tienda) y
+  para `social` (M5d.2).
+- **Impacto / archivos:**
+  - `packages/contracts/src/messaging.ts` (+exports): `ConversationContext`,
+    `Conversation`, `Message`, `MessageThread`, `SendMessageInput`.
+  - `packages/db/src/schema/messaging.ts` (+`index.ts`, +`reset.ts`):
+    `conversations` (único `(context, context_id)`) y `messages` (PK compuesta
+    `(id, created_at)` por el particionado). Migración
+    `0024_complete_sleepwalker.sql`: DDL **particionada a mano** (RANGE por
+    `created_at`: meses 2026-11/12 y 2027-01 + partición DEFAULT), CHECKs,
+    RLS/grants. `@3b/db` exporta `ne`.
+  - `packages/core/src/modules/messaging/`: `infra/conversation-repo.ts`
+    (`getOrderThread`, `sendOrderMessage`, `markOrderThreadRead`; conversación
+    perezosa idempotente), `http/routes.ts`, `index.ts`. `apps/api` monta
+    `messagingRouter()`; `@3b/core` exporta `./modules/messaging`.
+  - `apps/web`: `lib/messaging.ts` (`getOrderThread`),
+    `_components/order-chat.tsx` (hilo + envío + marcar leído al abrir), cableado en
+    `comprar/pedidos/[id]`.
+- **Decisiones de diseño:**
+  - **Autorización derivada del pedido (sin materializar `participants`):** la RLS
+    de `conversations` deriva de `orders` (en `order`: Maker dueño o miembro de la
+    tienda); `messages` deriva de la conversación padre. Se difiere la columna
+    `participants` (hará falta para contextos que no cuelgan de una sola entidad).
+  - **`messages` particionada por mes (D-08):** Drizzle no modela particiones
+    declarativas, así que la DDL va a mano en la migración (el objeto Drizzle apunta
+    al padre, solo para el query builder) y la PK incluye `created_at`. Partición
+    DEFAULT como red de seguridad; la creación de meses nuevos + retención 90 d
+    quedan para el **worker**.
+  - **Conversación perezosa:** se crea al abrir/escribir el hilo (idempotente por el
+    índice único), así la web siempre tiene un hilo que mostrar sin un paso de
+    "crear chat".
+  - **`messaging → orders`** por el `index.ts` público (como `payments`), sin ciclo.
+- **Verificación:** `pnpm check` **verde** (lint, typecheck, unit 19/19, boundaries
+  **368 módulos** sin violaciones). `pnpm test:integration`: db 6/6 + **core 86/86**
+  (+4 de M5d.1: Maker escribe→tienda ve, respuesta ordenada, marcar leído solo
+  entrantes, RLS tercero no ve/escribe). Smoke: la API arranca y publica las 3 rutas
+  de `messaging` en `/openapi.json`.
+- **Estado para retomar:** **M5d.1 (messaging) cerrado.** Siguiente: **M5d.2 —
+  `social`** (reseñas verificadas al `completado` + preguntas públicas), que además
+  necesita **habilitar el camino a `completado`** (hoy el genérico llega a `listo`;
+  falta la arista de cierre para retiro/pickup sin M6). Pendientes que arrastra M5:
+  **worker + Valkey** (vencer reservas, `stock.changed`, crear particiones mensuales
+  + retención de `messages`), el `consumed` (venta) y la captura del pago.
+- **Relacionado:** ROADMAP M5 (M5d), `data-model.md` §2.5 (messaging/social), §6,
+  D-08; entradas de M5a–M5c.
+
+## 2026-11-02 · `3b40743` · feat — M5c: pago por comprobante (módulo `payments`)
 
 - **Qué:** tercera rebanada de **M5**. Módulo nuevo `payments`: el Maker **reporta
   un pago** (método + **referencia bancaria única** + monto) sobre un pedido

@@ -83,6 +83,13 @@ export {
   MediaStatus,
   UploadTarget,
 } from './media';
+export {
+  Conversation,
+  ConversationContext,
+  Message,
+  MessageThread,
+  SendMessageInput,
+} from './messaging';
 export type { OrderTransition } from './orders';
 export {
   CheckoutLineInput,

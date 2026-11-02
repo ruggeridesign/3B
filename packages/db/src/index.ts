@@ -1,6 +1,6 @@
 // Re-exporta operadores de Drizzle para garantizar UNA sola instancia en el
 // workspace (evita choques de tipos entre variantes de peers).
-export { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+export { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 export { createDb, type Database } from './client';
 export {
   type AppContext,

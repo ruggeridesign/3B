@@ -3,6 +3,7 @@ export * from './community';
 export * from './identity';
 export * from './inventory';
 export * from './media';
+export * from './messaging';
 export * from './orders';
 export * from './payments';
 export * from './platform';
