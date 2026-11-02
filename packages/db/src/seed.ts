@@ -439,8 +439,54 @@ async function main() {
     ])
     .onConflictDoNothing();
 
+  // Pedido de ejemplo (M5a): Lucía compra 1 taladro (variante negra) en la
+  // Ferretería (Coro), retiro en tienda, estado `realizado`. Precio congelado del
+  // ítem (49.90, la variante no sobreescribe precio). Deja su evento de creación.
+  const O_DEMO = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa01';
+  await db
+    .insert(schema.orderRecords)
+    .values({
+      id: O_DEMO,
+      storeId: S_FERRETERIA,
+      communityId: CORO,
+      makerId: U_LUCIA,
+      status: 'realizado',
+      fulfillment: 'pickup',
+      subtotal: '49.90',
+      total: '49.90',
+      currency: 'USD',
+      idempotencyKey: 'seed-demo-order-1',
+    })
+    .onConflictDoNothing();
+  await db
+    .insert(schema.orderItems)
+    .values({
+      id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa02',
+      orderId: O_DEMO,
+      variantId: '66666666-6666-6666-6666-666666666601',
+      itemId: '44444444-4444-4444-4444-444444444401',
+      title: 'Taladro percutor 650W',
+      sku: 'TAL-650-NEGRO',
+      unitPrice: '49.90',
+      currency: 'USD',
+      qty: 1,
+      lineTotal: '49.90',
+    })
+    .onConflictDoNothing();
+  await db
+    .insert(schema.orderEvents)
+    .values({
+      id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa03',
+      orderId: O_DEMO,
+      fromStatus: null,
+      toStatus: 'realizado',
+      actorId: U_LUCIA,
+      reason: 'Pedido realizado desde el carrito.',
+    })
+    .onConflictDoNothing();
+
   // Resumen
-  const [[c], [u], [s], [m], [i], [v], [sd], [h], [col], [k], [st], [ai]] =
+  const [[c], [u], [s], [m], [i], [v], [sd], [h], [col], [k], [st], [ai], [o]] =
     await Promise.all([
       sql`select count(*)::int as n from community.communities`,
       sql`select count(*)::int as n from identity.users`,
@@ -454,9 +500,10 @@ async function main() {
       sql`select count(*)::int as n from identity.kyc_submissions`,
       sql`select count(*)::int as n from inventory.stock_levels`,
       sql`select count(*)::int as n from catalog.item_attr_index`,
+      sql`select count(*)::int as n from orders.orders`,
     ]);
   console.log(
-    `[seed] comunidades=${c.n} usuarios=${u.n} tiendas=${s.n} membresías=${m.n} ítems=${i.n} variantes=${v.n} servicios=${sd.n} horarios=${h.n} colecciones=${col.n} kyc=${k.n} stock=${st.n} attrIndex=${ai.n}`,
+    `[seed] comunidades=${c.n} usuarios=${u.n} tiendas=${s.n} membresías=${m.n} ítems=${i.n} variantes=${v.n} servicios=${sd.n} horarios=${h.n} colecciones=${col.n} kyc=${k.n} stock=${st.n} attrIndex=${ai.n} pedidos=${o.n}`,
   );
 
   await sql.end();

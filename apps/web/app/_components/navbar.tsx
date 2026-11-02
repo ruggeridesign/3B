@@ -13,7 +13,20 @@ import {
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { signOut } from '../../lib/auth-client';
+import { useCart } from './cart-provider';
 import { VerComo } from './ver-como';
+
+/** Enlace al carrito con el contador de ítems (solo Makers). */
+function CartLink() {
+  const { count } = useCart();
+  return (
+    <Link href="/comprar/carrito">
+      <Button variant="ghost" size="sm">
+        Carrito{count > 0 ? ` (${count})` : ''}
+      </Button>
+    </Link>
+  );
+}
 
 export function Navbar({ me }: { me: MeResponse }) {
   const pathname = usePathname();
@@ -69,6 +82,7 @@ export function Navbar({ me }: { me: MeResponse }) {
       </nav>
 
       <div className="ml-auto flex items-center gap-2">
+        {me.capabilities.isMaker && <CartLink />}
         {me.capabilities.isPlatformAdmin && <VerComo />}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -79,6 +93,11 @@ export function Navbar({ me }: { me: MeResponse }) {
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>{me.user.email}</DropdownMenuLabel>
             <DropdownMenuSeparator />
+            {me.capabilities.isMaker && (
+              <DropdownMenuItem asChild>
+                <Link href="/comprar/pedidos">Mis pedidos</Link>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem asChild>
               <Link href="/mi-tienda">
                 {me.capabilities.isSeller ? 'Mi Tienda' : 'Abrir una tienda'}

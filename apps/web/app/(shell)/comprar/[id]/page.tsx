@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getPublicItem } from '../../../../lib/catalog';
 import { getMe } from '../../../../lib/me';
+import { ItemBuy } from '../../../_components/item-buy';
 
 const MODALITY: Record<string, string> = {
   in_store: 'En el local',
@@ -120,31 +121,7 @@ export default async function ItemFicha({
       {it.variants.length > 0 && (
         <section className="space-y-2">
           <h2 className="font-medium text-foreground">Opciones</h2>
-          <ul className="grid gap-2">
-            {it.variants.map((v) => (
-              <li
-                key={v.id}
-                className="glass flex items-center justify-between gap-3 rounded-lg p-3"
-              >
-                <div className="min-w-0">
-                  <p className="font-medium text-foreground">{v.sku}</p>
-                  <p className="text-muted-foreground text-sm">
-                    {Object.entries(v.axisValues)
-                      .map(([k, val]) => `${k}: ${val}`)
-                      .join(' · ') || 'sin ejes'}
-                    {v.priceAmount ? ` · ${it.currency} ${v.priceAmount}` : ''}
-                  </p>
-                </div>
-                <span className="shrink-0 text-muted-foreground text-sm">
-                  {v.available == null
-                    ? 'sin control de stock'
-                    : v.available > 0
-                      ? `${v.available} disp.`
-                      : 'agotado'}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <ItemBuy item={it} />
         </section>
       )}
     </div>

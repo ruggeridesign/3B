@@ -39,9 +39,21 @@
 - **Hitos cerrados:** base del monorepo, **Hito A** (Postgres/PostGIS + migraciones
   + seed), **Hito B** (Better Auth + RBAC con alcance + RLS + auditoría + tests de
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
-  **M2** (tienda+catálogo+media; ver abajo).
-- **En curso:** **M3 · Inventario** (r1 hecha) y **M4 · Descubrimiento** (**completo**
-  salvo el proyección de ranking con señales de comportamiento), por rebanadas.
+  **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
+  la proyección de ranking con señales de comportamiento).
+- **En curso:** **M3 · Inventario** (r1 hecha) y **M5 · Pedido end-to-end**
+  (**M5a — carrito + checkout** hecho), por rebanadas.
+  - **M5a — carrito + checkout** (`orders`): módulo nuevo `orders` (esquema
+    `orders.orders`/`order_items`/`order_events` + RLS). El carrito es **del
+    cliente** (localStorage, multitienda); cada checkout crea **un pedido por
+    tienda** en estado `realizado`, con **título/SKU/precio congelados** (O-1),
+    snapshot de dirección y `Idempotency-Key` (O-4, único por Maker). `community_id`
+    se toma de la tienda (D-05); `number` correlativo (identity). API: `POST
+    /v1/orders` (201/200 idempotente), `GET /v1/orders` (míos), `GET
+    /v1/orders/{id}`, `GET /v1/stores/{id}/orders` (recibidos, miembros). Web:
+    "Agregar al carrito" en la ficha, carrito/checkout (`/comprar/carrito`), "Mis
+    pedidos" (`/comprar/pedidos`). **Difieren**: máquina de estados + reserva de
+    stock (M5b), pago por comprobante (M5c), chat/reseñas (M5d).
   - **M3 r1 — existencias + movimientos** (`inventory.stock_levels` proyección +
     `inventory.stock_movements` libro de solo inserción; trigger de proyección con
     no-sobreventa; idempotencia; mostrador/ajustes por API y web). **Difieren**:
@@ -71,8 +83,10 @@
     relevancia/recencia, usando las membresías del usuario (CTE bajo RLS). Satisface
     "(y vecinas)" y el "ranking básico". **Difiere**: `ranking.item_scores`
     (proyección con conversión/calidad) hasta **post-M5** (necesita pedidos/reseñas).
-  - **M4 cerrado** (salvo esa proyección). Siguiente: **M5 pedidos** (carrito/checkout;
-    trae las **reservas** de stock y enciende worker+Valkey).
+  - **M4 cerrado** (salvo esa proyección). **M5a hecho** (ver arriba). Siguiente:
+    **M5b** — máquina de estados del pedido (`realizado→aceptado→…→listo`) que al
+    `aceptado` **reserva** stock (engancha el `reserved` de M3 + `reservations`) y
+    enciende **worker + Valkey**.
 - **M2 (cerrado) · Tienda + Catálogo + núcleo de media**, por rebanadas
   verticales siguiendo `data-model.md §7`. HECHAS: **store 1 (alta)**, **2
   (equipo/roles)**, **3 (métodos de pago)**, **4 (horarios)**, **5 (KYC/
@@ -102,7 +116,71 @@
 
 ---
 
-## 2026-11-01 · _(este commit)_ · feat — M4 rebanada 5: cercanía (vecinas) + orden local-first
+## 2026-11-01 · _(este commit)_ · feat — M5a: carrito + checkout (módulo `orders`)
+
+- **Qué:** arranca **M5 · Pedido end-to-end** con su primera rebanada, **M5a**.
+  Módulo nuevo `orders`: el Maker arma un carrito (cliente, multitienda) y hace
+  **checkout de una tienda** → se crea **un pedido por tienda** en estado
+  `realizado`, con sus líneas de **título/SKU/precio congelados** (O-1), snapshot de
+  dirección (si es envío) y bitácora inicial (`→ realizado`). La creación exige
+  `Idempotency-Key` (O-4): un reintento con la misma clave devuelve el pedido ya
+  creado (200) en vez de duplicarlo.
+- **Por qué:** cumple la _salida_ de M5a del roadmap ("un Maker crea un pedido
+  `realizado` desde el carrito"). Deja la base del dominio de pedidos sobre la que
+  M5b montará la máquina de estados y la reserva de stock.
+- **Impacto / archivos:**
+  - `packages/contracts/src/orders.ts` (+export): `OrderStatus` (enum completo de
+    la máquina §6), `OrderFulfillment`, `Order`/`OrderItemLine`/`OrderEvent`,
+    `OrderAddressSnapshot`, `CreateOrderInput`/`CheckoutLineInput`, `OrderList`.
+  - `packages/db/src/schema/orders.ts` (+`index.ts`): `orderRecords`
+    (`orders.orders`), `orderItems`, `orderEvents`. Migración
+    `0021_broken_the_leader.sql`: tablas + FKs + índices + `number` identity
+    (START 1000) + **RLS** (ve el Maker dueño o miembro de la tienda; crea solo el
+    Maker, en comunidad visible) + grants (incl. `USAGE` sobre las secuencias) +
+    CHECKs de estado/entrega/montos. `reset.ts`: suma `orders` a los esquemas a
+    dropear.
+  - `packages/core/src/modules/orders/`: `domain/pricing.ts` (montos en **centavos
+    enteros**, `computeTotals`; +test unit 5/5), `infra/order-repo.ts`
+    (`createOrder` idempotente + congelado + evento; `getOrder`/`listMyOrders`/
+    `listStoreOrders`), `http/routes.ts` (router OpenAPI), `index.ts`. `@3b/db`
+    exporta `desc`. `apps/api` monta `ordersRouter()`.
+  - `apps/web`: `_components/cart-provider.tsx` (carrito en localStorage),
+    `cart-provider` montado en el shell, `CartLink` + "Mis pedidos" en la navbar,
+    `_components/item-buy.tsx` ("Agregar al carrito" en la ficha),
+    `(shell)/comprar/carrito` (checkout por tienda con `Idempotency-Key`),
+    `(shell)/comprar/pedidos` + `[id]` (mis pedidos), `lib/orders.ts`.
+  - `packages/db/src/seed.ts`: pedido de ejemplo (Lucía compra 1 taladro en la
+    Ferretería, `realizado`).
+- **Decisiones de diseño:**
+  - **Carrito del cliente, no en la base:** el modelo de datos no tiene tabla de
+    carrito; es efímero del comprador (localStorage). Un pedido por tienda ("un
+    pedido por tienda" del roadmap); el checkout dispara un `POST /v1/orders` por
+    tienda, cada uno con su `Idempotency-Key`.
+  - **Idempotencia por `(maker_id, idempotency_key)`** (único). El repo pre-chequea
+    y devuelve el existente; el único es el candado final ante carreras.
+  - **`community_id` desde la tienda (D-05):** el repo lo toma de `store` (visible
+    bajo RLS) al crear; sin trigger, y la RLS de alta exige `can_see_community`.
+  - **`fx_rate_ves` diferido a M5c:** la columna existe pero queda nula hasta que
+    M5c traiga `fx_rates` (P-2).
+  - **Sin reserva de stock en M5a:** `realizado` no toca inventario; la reserva va
+    al `aceptado` (O-3), en M5b.
+- **Verificación:** `pnpm check` **verde** (lint, typecheck 10/10, unit **14/14**
+  con pricing 5/5, boundaries 348 módulos sin violaciones). `pnpm test:integration`:
+  db 6/6 + **core 71/71** (+4 de orders: creación con precios congelados,
+  idempotencia, línea inválida, RLS tienda-ve/tercero-no). Smoke HTTP: login →
+  `POST /v1/orders` 201 (#1002, subtotal 149.70 = 49.90×3), repetido con la misma
+  clave 200 (mismo pedido), sin clave 400; `GET /v1/orders` (Lucía ve 3),
+  `GET /v1/stores/{id}/orders` (Carlos ve 3, todas de Lucía), Pedro (no miembro) 403.
+- **Estado para retomar:** **M5a cerrado**. Siguiente: **M5b** — máquina de estados
+  (`realizado→aceptado→rechazado/expirado→…→listo`) con transiciones válidas (§6),
+  **reserva/liberación de stock** (engancha `reserved`/`reservations` de M3) y
+  bitácora inmutable por transición; enciende **worker + Valkey**. Para M5b habrá
+  que **ampliar grants/policies** de `orders` (UPDATE del estado + INSERT de eventos
+  por miembros de la tienda) en una migración nueva.
+- **Relacionado:** ROADMAP M5 (M5a–M5d), `data-model.md` §3 (orders), §5 (O-1…O-4),
+  §6 (máquina de estados), D-05; entradas de M3 r1 (inventory) y M4.
+
+## 2026-11-01 · `95a0fb4` · feat — M4 rebanada 5: cercanía (vecinas) + orden local-first
 
 - **Qué:** el feed de descubrimiento ahora ordena **local-first**: primero los ítems
   de la **comunidad propia** del usuario, luego los de **comunidades vecinas**
