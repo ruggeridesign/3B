@@ -127,8 +127,9 @@ export interface OrderTransition {
  * modelo de datos). Cada arista indica de qué estado a qué estado y **quién** la
  * dispara. La lógica pura (validar, próximos estados, efecto sobre stock) vive en
  * `@3b/core/modules/orders` (domain); la cara web la filtra por actor para armar
- * los botones. Las aristas de pago (`pago_*`) se habilitan en M5c y las de envío
- * (`en_envio`/`entregado`/`completado`) en M6 (actor `system`/Mover).
+ * los botones. Las aristas de pago (`pago_*`) se habilitan en M5c; el cierre por
+ * **retiro en tienda** (`retirado → completado`, el comprador confirma) en M5d; y
+ * las de envío (`en_envio`/`entregado`) en M6 (actor `system`/Mover).
  */
 export const ORDER_TRANSITIONS: readonly OrderTransition[] = [
   { from: 'realizado', to: 'aceptado', by: 'seller' },
@@ -143,6 +144,7 @@ export const ORDER_TRANSITIONS: readonly OrderTransition[] = [
   { from: 'pago_confirmado', to: 'en_preparacion', by: 'seller' },
   { from: 'en_preparacion', to: 'listo', by: 'seller' },
   { from: 'listo', to: 'retirado', by: 'seller' }, // retiro en tienda
+  { from: 'retirado', to: 'completado', by: 'maker' }, // el comprador confirma (M5d)
   { from: 'listo', to: 'en_envio', by: 'system' }, // Mover asignado (M6)
   { from: 'en_envio', to: 'entregado', by: 'system' }, // valida PIN (M6)
   { from: 'entregado', to: 'completado', by: 'system' }, // 48h sin disputa

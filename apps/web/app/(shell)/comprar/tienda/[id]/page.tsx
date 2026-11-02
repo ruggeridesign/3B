@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getPublicStore } from '../../../../../lib/catalog';
 import { getMe } from '../../../../../lib/me';
+import { getStoreReviews, stars } from '../../../../../lib/social';
 
 // 0 = domingo … 6 = sábado; se muestran empezando por lunes.
 const DAYS = [
@@ -49,6 +50,8 @@ export default async function Storefront({
     );
   }
 
+  const reviews = await getStoreReviews(id);
+
   const hoursByDay = new Map<number, string[]>();
   for (const h of store.hours) {
     const list = hoursByDay.get(h.weekday) ?? [];
@@ -74,6 +77,15 @@ export default async function Storefront({
           {store.kind === 'products' ? 'Productos' : 'Servicios'}
           {store.communityName ? ` · ${store.communityName}` : ''}
         </p>
+        {reviews && reviews.count > 0 && (
+          <p className="text-sm">
+            <span className="text-accent">{stars(reviews.average ?? 0)}</span>{' '}
+            <span className="text-muted-foreground">
+              {reviews.average} · {reviews.count}{' '}
+              {reviews.count === 1 ? 'reseña' : 'reseñas'}
+            </span>
+          </p>
+        )}
       </div>
 
       {store.hours.length > 0 && (
@@ -121,6 +133,32 @@ export default async function Storefront({
           </p>
         )}
       </section>
+
+      {reviews && reviews.reviews.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="font-medium text-foreground">Reseñas</h2>
+          <ul className="space-y-2">
+            {reviews.reviews.map((r) => (
+              <li key={r.id} className="glass space-y-1 rounded-lg p-3">
+                <p className="text-sm">
+                  <span className="text-accent">
+                    {'★★★★★'.slice(0, r.rating)}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {'☆☆☆☆☆'.slice(0, 5 - r.rating)}
+                  </span>
+                  {r.authorName && (
+                    <span className="ml-2 text-muted-foreground text-xs">
+                      {r.authorName}
+                    </span>
+                  )}
+                </p>
+                {r.body && <p className="text-foreground text-sm">{r.body}</p>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

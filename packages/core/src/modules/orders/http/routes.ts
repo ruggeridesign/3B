@@ -133,8 +133,9 @@ const errorSchema = z.object({ error: z.string() }).openapi('OrderError');
  * Estados alcanzables por el endpoint genérico de transición (acciones directas
  * de Seller/Maker). Las aristas de **pago** (`pago_reportado`/`pago_confirmado`/
  * `pago_rechazado`) NO están acá: las dispara el módulo `payments` al reportar/
- * revisar un comprobante (M5c), nunca a mano. Las de envío/entrega
- * (`en_envio`/`entregado`/`completado`/`retirado`) llegan en M6.
+ * revisar un comprobante (M5c), nunca a mano. El cierre por **retiro en tienda**
+ * (`retirado` por el Seller, `completado` por el comprador) se habilita en M5d; las
+ * de envío a domicilio (`en_envio`/`entregado`) llegan en M6 (actor `system`).
  */
 const GENERIC_TARGETS = new Set<string>([
   'aceptado',
@@ -142,6 +143,8 @@ const GENERIC_TARGETS = new Set<string>([
   'listo',
   'cancelado',
   'en_preparacion', // tras confirmar el pago, el Seller prepara (M5c)
+  'retirado', // el Seller entrega en el mostrador (M5d)
+  'completado', // el comprador confirma el retiro (M5d)
 ]);
 
 const idParam = z.object({

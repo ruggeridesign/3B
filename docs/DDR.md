@@ -43,8 +43,19 @@
   la proyección de ranking con señales de comportamiento).
 - **En curso:** **M3 · Inventario** (r1 hecha) y **M5 · Pedido end-to-end**
   (**M5a — carrito**, **M5b — máquina de estados + reserva**, **M5c — pago por
-  comprobante** y **M5d.1 — chat del pedido** hechos), por rebanadas. Siguiente de
-  M5: **M5d.2 — social** (reseñas verificadas + preguntas públicas).
+  comprobante**, **M5d.1 — chat del pedido** y **M5d.2 — reseñas** hechos). **M5d
+  completo** (pedido `completado` con reseña y un hilo de chat). **M5 cerrado salvo
+  infra** (worker/Valkey) y pendientes a M6. Siguiente: **M6 · Envíos** (o cerrar los
+  pendientes de infra de M5).
+  - **M5d.2 — reseñas verificadas** (`social`): módulo nuevo. Al `completado` el
+    comprador reseña la **tienda** (rating 1–5 + comentario; una por pedido y
+    destinatario, D-04); se publica en el storefront (promedio + conteo). Para llegar
+    a `completado` sin M6, se habilita el cierre por **retiro en tienda**
+    (`retirado → completado`, el comprador confirma); el genérico suma `retirado`
+    (Seller) y `completado` (Maker). RLS: reseña = Maker de un pedido completado;
+    visible por comunidad (como descubrimiento). Append-only; `author_name`/
+    `community_id` congelados. **Difieren:** preguntas públicas (`questions`),
+    `reports`, reseñas a Mover/Maker (con M6), y el `consume` del stock al retirar.
   - **M5d.1 — chat contextual** (`messaging`): módulo nuevo. Hilo de chat **por
     pedido** entre comprador y tienda (`conversations`, una por `(context,
     context_id)`; contexto `order`) + `messages` **particionada por mes** (D-08,
@@ -115,8 +126,9 @@
     relevancia/recencia, usando las membresías del usuario (CTE bajo RLS). Satisface
     "(y vecinas)" y el "ranking básico". **Difiere**: `ranking.item_scores`
     (proyección con conversión/calidad) hasta **post-M5** (necesita pedidos/reseñas).
-  - **M4 cerrado** (salvo esa proyección). **M5a, M5b, M5c y M5d.1 hechos** (ver
-    arriba). Siguiente de M5: **M5d.2** — social (`social`: reseñas + preguntas).
+  - **M4 cerrado** (salvo esa proyección). **M5a–M5d hechos** (ver arriba): **M5
+    cerrado** salvo la infra (worker/Valkey) y los pendientes a M6. La proyección de
+    ranking con señales de comportamiento ya tiene insumos (pedidos + reseñas).
 - **M2 (cerrado) · Tienda + Catálogo + núcleo de media**, por rebanadas
   verticales siguiendo `data-model.md §7`. HECHAS: **store 1 (alta)**, **2
   (equipo/roles)**, **3 (métodos de pago)**, **4 (horarios)**, **5 (KYC/
@@ -146,7 +158,69 @@
 
 ---
 
-## 2026-11-02 · _(este commit)_ · feat — M5d.1: chat contextual del pedido (módulo `messaging`)
+## 2026-11-02 · _(este commit)_ · feat — M5d.2: reseñas verificadas al completado (módulo `social`)
+
+- **Qué:** segunda rebanada de **M5d** (cierra la _salida_ de M5d). Módulo nuevo
+  `social`: al `completado` el comprador (Maker) deja **una** reseña de la **tienda**
+  (rating 1–5 + comentario), con `author_name`/`community_id` congelados; se publica
+  en el storefront (promedio + conteo + recientes). Para **alcanzar `completado`** sin
+  M6 se habilita el cierre por **retiro en tienda**: nueva arista
+  `retirado → completado` (el comprador confirma) y el endpoint genérico suma
+  `retirado` (Seller) y `completado` (Maker) al allowlist.
+- **Por qué:** cumple la _salida_ de M5d ("pedido `completado` con reseña"); engancha
+  reseña ↔ pedido (O-3: al completar se habilitan reseñas) con el candado D-04 (una
+  por pedido y destinatario).
+- **Impacto / archivos:**
+  - `packages/contracts/src/social.ts` (+exports): `ReviewSubjectType`, `Review`,
+    `ReviewList`, `StoreReviewSummary`, `CreateReviewInput`.
+  - `packages/contracts/src/orders.ts`: nueva arista `retirado → completado` (maker)
+    en `ORDER_TRANSITIONS`.
+  - `packages/db/src/schema/social.ts` (+`index.ts`, +`reset.ts`): tabla `reviews`
+    (único `(order, author, subject_type)` D-04). Migración
+    `0025_blue_bill_hollister.sql`: tabla + CHECKs (rating 1–5, subject) + RLS/grants
+    (append-only; SELECT por comunidad o autor; INSERT = comprador de un pedido
+    `completado` de esa comunidad/tienda).
+  - `packages/core/src/modules/orders/http/routes.ts`: `GENERIC_TARGETS` suma
+    `retirado`/`completado`.
+  - `packages/core/src/modules/social/`: `infra/review-repo.ts`
+    (`createStoreReview`, `listOrderReviews`, `storeReviewSummary`; congela
+    `author_name`), `http/routes.ts` (`POST /orders/{id}/reviews`,
+    `GET /orders/{id}/reviews`, `GET /stores/{id}/reviews`), `index.ts`. `apps/api`
+    monta `socialRouter()`; `@3b/core` exporta `./modules/social`.
+  - `apps/web`: `lib/social.ts` (`getOrderReviews`/`getStoreReviews`/`stars`),
+    `_components/review-form.tsx` (estrellas + comentario / reseña en lectura),
+    cableado en `comprar/pedidos/[id]` (reseñar al completar) y en el storefront
+    `comprar/tienda/[id]` (promedio + lista). `lib/orders.ts` suma los botones
+    "Marcar retirado" (Seller) y "Confirmar recepción" (Maker).
+- **Decisiones de diseño:**
+  - **Reseña verificada = nace de un pedido `completado`:** el servicio chequea
+    dueño + estado + no-duplicado; la **RLS** es el candado final (INSERT exige ser el
+    Maker de un pedido completado de esa comunidad/tienda). Append-only (SELECT/INSERT;
+    no se edita ni borra).
+  - **Cierre por retiro sin M6:** `retirado → completado` (maker) da un camino a
+    `completado` para pickup sin el flujo de Movers (M6). El **`consume`** de stock
+    sigue diferido: al `retirado` la reserva se mantiene (no-op) hasta M6.
+  - **Snapshot `author_name`/`community_id`:** evita joins cruzados bajo RLS (el nombre
+    del autor) y habilita la visibilidad por comunidad (como el descubrimiento).
+    `subject_type` polimórfico (D-04); M5d.2 cablea `store`.
+  - **`social → orders`** por el `index.ts` público, sin ciclo.
+- **Verificación:** `pnpm check` **verde** (lint, typecheck 10/10, unit 19/19,
+  boundaries **376 módulos** sin violaciones). `pnpm test:integration`: db 6/6 +
+  **core 91/91** (+5 de M5d.2: solo al completado, reseña ok + resumen, no-duplicado
+  D-04, solo el comprador, RLS insert ajeno rechazado). El test de `social` crea una
+  **variante dedicada** (`beforeAll`) porque al completar retiene la reserva (consume
+  diferido), evitando carreras con orders/inventory. Smoke: la API publica las rutas
+  de `social` en `/openapi.json`.
+- **Estado para retomar:** **M5d.2 cerrado → M5d completo** (pedido `completado` con
+  reseña y un hilo de chat). Pendientes de `social`: **preguntas públicas**
+  (`questions`) + `reports`, y reseñas a **Mover/Maker** (D-04) con M6. Pendientes que
+  arrastra M5: **worker + Valkey** (vencer reservas, `stock.changed`, particiones
+  mensuales + retención de `messages`), el **`consume`** (venta real de `on_hand`) del
+  flujo de entrega (M6) y la **captura** del pago.
+- **Relacionado:** ROADMAP M5 (M5d), `data-model.md` §2.5 (social), §5 (O-3), §6,
+  D-04; entradas de M5a–M5d.1.
+
+## 2026-11-02 · `b3f749c` · feat — M5d.1: chat contextual del pedido (módulo `messaging`)
 
 - **Qué:** primera rebanada de **M5d**. Módulo nuevo `messaging`: hilo de chat
   **por pedido** entre el comprador (Maker) y la tienda (Seller). `conversations`

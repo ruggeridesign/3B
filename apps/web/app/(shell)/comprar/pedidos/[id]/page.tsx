@@ -9,9 +9,11 @@ import {
   type OrderAction,
   orderActions,
 } from '../../../../../lib/orders';
+import { getOrderReviews } from '../../../../../lib/social';
 import { OrderActions } from '../../../../_components/order-actions';
 import { OrderChat } from '../../../../_components/order-chat';
 import { PaymentPanel } from '../../../../_components/payment-panel';
+import { ReviewForm } from '../../../../_components/review-form';
 
 const FULFILLMENT_LABEL: Record<string, string> = {
   pickup: 'Retiro en tienda',
@@ -54,6 +56,7 @@ export default async function PedidoDetalle({
 
   const payments = await getOrderPayments(id);
   const thread = await getOrderThread(id);
+  const reviews = await getOrderReviews(id);
 
   // Rol del viewer frente a ESTE pedido: miembro de la tienda (Seller) y/o dueño
   // (Maker). Según eso se ofrecen las transiciones válidas (la API gatea igual).
@@ -69,6 +72,14 @@ export default async function PedidoDetalle({
       actionMap.set(a.toStatus, a);
   }
   const actions = [...actionMap.values()];
+
+  // Reseña de la tienda: visible al comprador; puede dejarla al `completado` si
+  // aún no lo hizo. El `subjectType` 'store' es el único que se cablea en M5d.2.
+  const myReview =
+    reviews.find(
+      (r) => r.authorId === me.user.id && r.subjectType === 'store',
+    ) ?? null;
+  const canReview = isMaker && o.status === 'completado' && !myReview;
 
   return (
     <div className="space-y-6">
@@ -117,6 +128,8 @@ export default async function PedidoDetalle({
           meId={me.user.id}
         />
       )}
+
+      <ReviewForm orderId={o.id} review={myReview} canReview={canReview} />
 
       <section className="space-y-2">
         <h2 className="font-medium text-foreground">Líneas</h2>

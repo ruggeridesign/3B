@@ -114,6 +114,13 @@ export {
   ReviewPaymentInput,
 } from './payments';
 export {
+  CreateReviewInput,
+  Review,
+  ReviewList,
+  ReviewSubjectType,
+  StoreReviewSummary,
+} from './social';
+export {
   AssignableStoreRole,
   CreatePaymentMethodInput,
   CreateStoreHourInput,

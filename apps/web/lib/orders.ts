@@ -79,6 +79,8 @@ const GENERIC_ENABLED = new Set<OrderStatus>([
   'listo',
   'cancelado',
   'en_preparacion',
+  'retirado',
+  'completado',
 ]);
 
 const ACTION_LABEL: Partial<Record<OrderStatus, string>> = {
@@ -87,6 +89,8 @@ const ACTION_LABEL: Partial<Record<OrderStatus, string>> = {
   listo: 'Marcar listo',
   cancelado: 'Cancelar',
   en_preparacion: 'Preparar',
+  retirado: 'Marcar retirado',
+  completado: 'Confirmar recepción',
 };
 
 /**
