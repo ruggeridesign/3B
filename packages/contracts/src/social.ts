@@ -4,9 +4,14 @@ import { z } from 'zod';
  * Contratos del módulo `social`. **M5d.2 — reseñas verificadas**: al `completado`
  * el comprador (Maker) puede dejar **una** reseña (rating + comentario) sobre la
  * tienda del pedido (O-3). El destinatario es polimórfico (`store`/`mover`/`maker`,
- * D-04); M5d.2 cablea `store`. Una reseña por `(pedido, autor, destinatario)`. Las
- * preguntas públicas (`questions`) llegan en una rebanada posterior.
+ * D-04); M5d.2 cablea `store`. Una reseña por `(pedido, autor, destinatario)`.
+ * **M5d.3** suma `questions` (preguntas públicas) y **M5d.4** `reports` (moderación).
  */
+
+// UUID laxo (acepta los del seed, que no son v4 estrictos).
+const uuid = z
+  .string()
+  .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 
 /** A quién apunta la reseña (§2.5 del modelo de datos, D-04). */
 export const ReviewSubjectType = z.enum(['store', 'mover', 'maker']);
@@ -77,3 +82,51 @@ export const AnswerQuestionInput = z.object({
   answer: z.string().min(1).max(2000),
 });
 export type AnswerQuestionInput = z.infer<typeof AnswerQuestionInput>;
+
+/** Tipo de contenido reportado (moderación). */
+export const ReportTargetType = z.enum(['item', 'review', 'question', 'store']);
+export type ReportTargetType = z.infer<typeof ReportTargetType>;
+
+/** Estado de un reporte de moderación. */
+export const ReportStatus = z.enum([
+  'open',
+  'reviewing',
+  'resolved',
+  'dismissed',
+]);
+export type ReportStatus = z.infer<typeof ReportStatus>;
+
+/** Un reporte de moderación sobre un contenido. */
+export const Report = z.object({
+  id: z.string(),
+  targetType: ReportTargetType,
+  targetId: z.string(),
+  reason: z.string(),
+  status: ReportStatus,
+  reporterId: z.string(),
+  communityId: z.string(),
+  resolutionNote: z.string().nullable(),
+  resolvedBy: z.string().nullable(),
+  resolvedAt: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type Report = z.infer<typeof Report>;
+
+/** Lista de reportes (cola de moderación). */
+export const ReportList = z.object({ reports: z.array(Report) });
+export type ReportList = z.infer<typeof ReportList>;
+
+/** Reportar un contenido. `communityId` se deriva del target (no se confía en él). */
+export const CreateReportInput = z.object({
+  targetType: ReportTargetType,
+  targetId: uuid,
+  reason: z.string().min(3).max(1000),
+});
+export type CreateReportInput = z.infer<typeof CreateReportInput>;
+
+/** El admin resuelve un reporte (lo cierra o lo descarta). */
+export const ResolveReportInput = z.object({
+  status: z.enum(['resolved', 'dismissed']),
+  note: z.string().max(1000).optional(),
+});
+export type ResolveReportInput = z.infer<typeof ResolveReportInput>;

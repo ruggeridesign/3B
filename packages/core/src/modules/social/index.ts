@@ -10,6 +10,13 @@ export {
   listItemQuestions,
 } from './infra/question-repo';
 export {
+  type CreateReportResult,
+  createReport,
+  listReports,
+  type ResolveReportResult,
+  resolveReport,
+} from './infra/report-repo';
+export {
   type CreateReviewResult,
   createStoreReview,
   listOrderReviews,

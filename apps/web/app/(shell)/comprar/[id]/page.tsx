@@ -6,6 +6,7 @@ import { getMe } from '../../../../lib/me';
 import { getItemQuestions } from '../../../../lib/social';
 import { ItemBuy } from '../../../_components/item-buy';
 import { ItemQuestions } from '../../../_components/item-questions';
+import { ReportButton } from '../../../_components/report-button';
 
 const MODALITY: Record<string, string> = {
   in_store: 'En el local',
@@ -133,6 +134,10 @@ export default async function ItemFicha({
         questions={questions}
         isStoreMember={me.stores.some((s) => s.id === it.storeId)}
       />
+
+      <div className="pt-2">
+        <ReportButton targetType="item" targetId={it.id} />
+      </div>
     </div>
   );
 }

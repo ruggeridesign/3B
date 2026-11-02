@@ -94,3 +94,38 @@ export const questions = social.table(
     index('questions_community_idx').on(t.communityId),
   ],
 );
+
+/**
+ * Reporte de moderación sobre un contenido (polimórfico: `item`/`review`/
+ * `question`/`store`, sin FK dura al target). `community_id` se **deriva** del
+ * target al crearlo (nunca del cliente) para acotar la cola a los admins de esa
+ * comunidad. La RLS: lo crea quien ve la comunidad (como reporter); lo ve/resuelve
+ * el admin de la comunidad o de plataforma (y el propio reporter ve el suyo).
+ */
+export const reports = social.table(
+  'reports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    targetType: text('target_type').notNull(), // item | review | question | store
+    targetId: uuid('target_id').notNull(),
+    reason: text('reason').notNull(),
+    status: text('status').notNull().default('open'), // open | reviewing | resolved | dismissed
+    reporterId: uuid('reporter_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id, { onDelete: 'restrict' }),
+    resolutionNote: text('resolution_note'),
+    resolvedBy: uuid('resolved_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    index('reports_status_idx').on(t.status),
+    index('reports_community_idx').on(t.communityId),
+    index('reports_target_idx').on(t.targetType, t.targetId),
+  ],
+);

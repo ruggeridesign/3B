@@ -1,4 +1,10 @@
-import type { Question, Review, StoreReviewSummary } from '@3b/contracts';
+import type {
+  Question,
+  Report,
+  ReportStatus,
+  Review,
+  StoreReviewSummary,
+} from '@3b/contracts';
 import { cookies } from 'next/headers';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787';
@@ -46,6 +52,24 @@ export async function getStoreReviews(
 export function stars(rating: number): string {
   const n = Math.round(rating);
   return '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(0, 5 - n);
+}
+
+/** Cola de reportes (la RLS la acota a admins / reporter). [] si falla. */
+export async function getReports(status?: ReportStatus): Promise<Report[]> {
+  const cookie = await cookieHeader();
+  if (!cookie) return [];
+  const qs = status ? `?status=${status}` : '';
+  try {
+    const res = await fetch(`${API}/v1/reports${qs}`, {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { reports: Report[] };
+    return data.reports;
+  } catch {
+    return [];
+  }
 }
 
 /** Preguntas públicas de un ítem. [] si no hay sesión o falla. */

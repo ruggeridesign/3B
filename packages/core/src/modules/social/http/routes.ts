@@ -11,6 +11,7 @@ import {
   findQuestion,
   listItemQuestions,
 } from '../infra/question-repo';
+import { createReport, listReports, resolveReport } from '../infra/report-repo';
 import {
   createStoreReview,
   listOrderReviews,
@@ -76,6 +77,44 @@ const answerBody = z
   .object({ answer: z.string().min(1).max(2000) })
   .openapi('AnswerQuestion');
 
+const reportTargetType = z.enum(['item', 'review', 'question', 'store']);
+const reportStatus = z.enum(['open', 'reviewing', 'resolved', 'dismissed']);
+
+const reportOut = z
+  .object({
+    id: z.string(),
+    targetType: reportTargetType,
+    targetId: z.string(),
+    reason: z.string(),
+    status: reportStatus,
+    reporterId: z.string(),
+    communityId: z.string(),
+    resolutionNote: z.string().nullable(),
+    resolvedBy: z.string().nullable(),
+    resolvedAt: z.string().nullable(),
+    createdAt: z.string(),
+  })
+  .openapi('Report');
+
+const reportListOut = z
+  .object({ reports: z.array(reportOut) })
+  .openapi('ReportList');
+
+const createReportBody = z
+  .object({
+    targetType: reportTargetType,
+    targetId: z.string(),
+    reason: z.string().min(3).max(1000),
+  })
+  .openapi('CreateReport');
+
+const resolveReportBody = z
+  .object({
+    status: z.enum(['resolved', 'dismissed']),
+    note: z.string().max(1000).optional(),
+  })
+  .openapi('ResolveReport');
+
 const errorSchema = z.object({ error: z.string() }).openapi('SocialError');
 
 const orderParam = z.object({
@@ -89,6 +128,14 @@ const itemParam = z.object({
 });
 const questionParam = z.object({
   id: z.string().openapi({ param: { name: 'id', in: 'path' } }),
+});
+const reportParam = z.object({
+  id: z.string().openapi({ param: { name: 'id', in: 'path' } }),
+});
+const reportQuery = z.object({
+  status: reportStatus
+    .optional()
+    .openapi({ param: { name: 'status', in: 'query' } }),
 });
 
 /**
@@ -339,6 +386,109 @@ export function socialRouter() {
         return c.json({ error: 'No encontrada.' }, 404);
       }
       return c.json(res.question, 200);
+    },
+  );
+
+  // Reportar un contenido (cualquiera que vea la comunidad).
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/reports',
+      tags: ['social'],
+      summary: 'Reportar un contenido',
+      request: {
+        body: { content: { 'application/json': { schema: createReportBody } } },
+      },
+      responses: {
+        201: {
+          description: 'Reporte creado',
+          content: { 'application/json': { schema: reportOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'El contenido no existe o no es visible',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db, userId } = sessionCtx(c);
+      const body = c.req.valid('json');
+      const res = await createReport(db, userId, body);
+      if (res.status === 'target_not_found') {
+        return c.json({ error: 'No encontrado.' }, 404);
+      }
+      return c.json(res.report, 201);
+    },
+  );
+
+  // Cola de reportes (la RLS la acota: admin de comunidad/plataforma o reporter).
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/reports',
+      tags: ['social'],
+      summary: 'Cola de reportes (moderación)',
+      request: { query: reportQuery },
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: reportListOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { status } = c.req.valid('query');
+      const reports = await listReports(db, status);
+      return c.json({ reports }, 200);
+    },
+  );
+
+  // Resolver/descartar un reporte (admin de la comunidad o de plataforma).
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/reports/{id}/resolve',
+      tags: ['social'],
+      summary: 'Resolver un reporte',
+      request: {
+        params: reportParam,
+        body: {
+          content: { 'application/json': { schema: resolveReportBody } },
+        },
+      },
+      responses: {
+        200: {
+          description: 'Reporte resuelto',
+          content: { 'application/json': { schema: reportOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'No existe o no podés resolverlo',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db, userId } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      const { status, note } = c.req.valid('json');
+      const res = await resolveReport(db, id, userId, status, note ?? null);
+      if (res.status === 'not_found') {
+        return c.json({ error: 'No encontrado.' }, 404);
+      }
+      return c.json(res.report, 200);
     },
   );
 

@@ -43,10 +43,14 @@
   la proyección de ranking con señales de comportamiento).
 - **En curso:** **M3 · Inventario** (r1 hecha) y **M5 · Pedido end-to-end**
   (**M5a — carrito**, **M5b — máquina de estados + reserva**, **M5c — pago por
-  comprobante**, **M5d.1 — chat**, **M5d.2 — reseñas** y **M5d.3 — preguntas**
-  hechos). **M5d completo** (pedido `completado` con reseña, un hilo de chat y Q&A de
-  ítems). **Cerrando M5 (features):** falta `reports` (moderación) y la **captura del
-  pago** (media→pedido); el **worker/Valkey** queda como su propia rebanada de infra.
+  comprobante**, **M5d.1 — chat**, **M5d.2 — reseñas**, **M5d.3 — preguntas** y
+  **M5d.4 — reportes** hechos). **M5d completo**. **Cerrando M5 (features):** falta la
+  **captura del pago** (media→pedido); el **worker/Valkey** queda como su propia
+  rebanada de infra.
+  - **M5d.4 — reportes** (`social.reports`): moderación. Cualquiera que ve la
+    comunidad reporta contenido (item/review/question/store, `community_id` derivado
+    del target); el admin de la comunidad/plataforma resuelve. Web: "Reportar" en la
+    ficha de ítem + cola en `/admin`.
   - **M5d.3 — preguntas públicas** (`social.questions`): Q&A sobre un ítem publicado;
     cualquiera que lo ve pregunta, la tienda responde. RLS: SELECT por comunidad,
     answer = miembro de la tienda. Web: bloque en la ficha de ítem.
@@ -161,7 +165,48 @@
 
 ---
 
-## 2026-11-02 · _(este commit)_ · feat — M5d.3: preguntas públicas de ítem (`social.questions`)
+## 2026-11-02 · _(este commit)_ · feat — M5d.4: reportes de moderación (`social.reports`)
+
+- **Qué:** cuarta rebanada de **M5d**. Moderación de contenido: cualquiera que ve la
+  comunidad **reporta** un contenido (`item`/`review`/`question`/`store`) con un
+  motivo; el **admin de la comunidad** (o de plataforma) ve la cola y lo
+  **resuelve/descarta**. Tabla `social.reports` (target polimórfico sin FK dura;
+  `community_id` **derivado del target**, nunca del cliente). API: `POST /v1/reports`,
+  `GET /v1/reports?status=`, `POST /v1/reports/{id}/resolve`. Web: botón "Reportar"
+  en la ficha de ítem + cola de moderación en `/admin` (antes placeholder).
+- **Por qué:** completa la superficie **social** de M5 (reseñas + preguntas +
+  reportes) del mapa de datos (§2.5).
+- **Impacto / archivos:**
+  - `packages/contracts/src/social.ts` (+exports): `ReportTargetType`,
+    `ReportStatus`, `Report`, `ReportList`, `CreateReportInput`, `ResolveReportInput`.
+  - `packages/db/src/schema/social.ts` (+migración `0027_tough_chat.sql`): tabla
+    `reports` + CHECKs (target/status/motivo) + RLS/grants (INSERT = reporter que ve
+    la comunidad; SELECT/UPDATE = admin de la comunidad/plataforma, y el reporter ve
+    el suyo).
+  - `packages/core/src/modules/social/`: `infra/report-repo.ts` (`createReport`
+    —resuelve `community_id` del target—, `listReports`, `resolveReport`), rutas en
+    `http/routes.ts`, +exports. (`socialRouter` ya montado.)
+  - `apps/web`: `lib/social.ts` (`getReports`), `_components/report-button.tsx` +
+    `_components/reports-queue.tsx`, cableado en `comprar/[id]` y en `/admin` (cola).
+- **Decisiones de diseño:**
+  - **`community_id` derivado del target (no del cliente):** `createReport` mira la
+    tabla del `target_type` (item/review/question/store) bajo RLS para fijar el
+    alcance; así la cola queda acotada al admin correcto. Sin FK dura (target
+    polimórfico, D-04-style).
+  - **RLS como candado de moderación:** resolver = admin de la comunidad o de
+    plataforma (a un no-admin no le afecta ninguna fila → 404 limpio). El reporter ve
+    el suyo. Append-only salvo la resolución (UPDATE del admin).
+  - **Triage en `/admin` (platform):** la cola de comunidad para community-admins
+    tendrá su propia superficie web más adelante; por ahora el loop se demuestra con
+    el admin de plataforma (RLS ya habilita a ambos).
+- **Verificación:** `pnpm check` **verde** (lint, typecheck 10/10, unit 19/19,
+  boundaries **383 módulos**). `pnpm test:integration`: db 6/6 + **core 99/99** (+4 de
+  M5d.4: reportar deriva comunidad, target inexistente, RLS reporter-ve/tercero-no,
+  solo admin resuelve).
+- **Relacionado:** ROADMAP M5 (M5d), `data-model.md` §2.5 (reports); entradas de
+  M5d.1–M5d.3.
+
+## 2026-11-02 · `19ba62a` · feat — M5d.3: preguntas públicas de ítem (`social.questions`)
 
 - **Qué:** tercera rebanada de **M5d**. Preguntas públicas sobre un ítem publicado:
   cualquiera que ve el ítem **pregunta**; la **tienda responde**. Tabla
