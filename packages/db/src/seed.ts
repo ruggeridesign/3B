@@ -485,6 +485,13 @@ async function main() {
     })
     .onConflictDoNothing();
 
+  // Tasa de cambio del día (BCV): USD→VES. La usa M5c para congelar `fx_rate_ves`
+  // del pedido al reportar el pago (P-2). Fecha fija = seed determinista.
+  await db
+    .insert(schema.fxRates)
+    .values({ date: '2026-11-02', source: 'BCV', usdVes: '52.3600' })
+    .onConflictDoNothing();
+
   // Resumen
   const [[c], [u], [s], [m], [i], [v], [sd], [h], [col], [k], [st], [ai], [o]] =
     await Promise.all([

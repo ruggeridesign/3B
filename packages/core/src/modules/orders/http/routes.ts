@@ -130,15 +130,18 @@ const transitionBody = z
 const errorSchema = z.object({ error: z.string() }).openapi('OrderError');
 
 /**
- * Estados alcanzables por la API en M5b (el Seller mueve el pedido hasta `listo`,
- * el Maker puede cancelar). Las aristas de pago (`pago_*`) se habilitan en M5c y
- * las de envío/entrega (`en_envio`/`entregado`/`completado`/`retirado`) en M6.
+ * Estados alcanzables por el endpoint genérico de transición (acciones directas
+ * de Seller/Maker). Las aristas de **pago** (`pago_reportado`/`pago_confirmado`/
+ * `pago_rechazado`) NO están acá: las dispara el módulo `payments` al reportar/
+ * revisar un comprobante (M5c), nunca a mano. Las de envío/entrega
+ * (`en_envio`/`entregado`/`completado`/`retirado`) llegan en M6.
  */
-const M5B_TARGETS = new Set<string>([
+const GENERIC_TARGETS = new Set<string>([
   'aceptado',
   'rechazado',
   'listo',
   'cancelado',
+  'en_preparacion', // tras confirmar el pago, el Seller prepara (M5c)
 ]);
 
 const idParam = z.object({
@@ -372,8 +375,8 @@ export function ordersRouter() {
           400,
         );
       }
-      // ¿Está habilitada en M5b?
-      if (!M5B_TARGETS.has(toStatus)) {
+      // ¿La dispara el endpoint genérico? (las de pago van por `payments`.)
+      if (!GENERIC_TARGETS.has(toStatus)) {
         return c.json(
           { error: `La transición a "${toStatus}" aún no está disponible.` },
           400,

@@ -14,7 +14,8 @@
     "./modules/media": "./src/modules/media/index.ts",
     "./modules/catalog": "./src/modules/catalog/index.ts",
     "./modules/inventory": "./src/modules/inventory/index.ts",
-    "./modules/orders": "./src/modules/orders/index.ts"
+    "./modules/orders": "./src/modules/orders/index.ts",
+    "./modules/payments": "./src/modules/payments/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

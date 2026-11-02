@@ -4,7 +4,15 @@ import type {
   OrderItemLine,
   OrderStatus,
 } from '@3b/contracts';
-import { type AppTransaction, and, desc, eq, inArray, schema } from '@3b/db';
+import {
+  type AppTransaction,
+  and,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  schema,
+} from '@3b/db';
 import { releaseForOrder, reserveForOrder } from '../../inventory';
 import { computeTotals, type PriceLine } from '../domain/pricing';
 import { canTransition, stockEffect } from '../domain/transitions';
@@ -305,6 +313,28 @@ export async function createOrder(
 
   const full = await getOrder(db, created.id);
   return { status: 'ok', order: full as Order };
+}
+
+/**
+ * Congela la tasa Bs del pedido (P-2): fija `fx_rate_ves` **solo si aún era
+ * nula** (una vez congelada, el monto en Bs no cambia). Idempotente. La invoca
+ * `payments` al reportar un pago, con la tasa vigente. La RLS la acota (el Maker
+ * dueño o un miembro de la tienda pueden actualizar el pedido).
+ */
+export async function freezeFxRate(
+  db: AppTransaction,
+  orderId: string,
+  usdVes: string,
+): Promise<void> {
+  await db
+    .update(schema.orderRecords)
+    .set({ fxRateVes: usdVes, updatedAt: new Date() })
+    .where(
+      and(
+        eq(schema.orderRecords.id, orderId),
+        isNull(schema.orderRecords.fxRateVes),
+      ),
+    );
 }
 
 /** Resultado de una transición de estado (para mapear a HTTP sin 500). */

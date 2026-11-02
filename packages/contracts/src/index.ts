@@ -99,6 +99,14 @@ export {
   OrderTransitionInput,
 } from './orders';
 export {
+  FxRate,
+  PaymentReport,
+  PaymentReportList,
+  PaymentStatus,
+  ReportPaymentInput,
+  ReviewPaymentInput,
+} from './payments';
+export {
   AssignableStoreRole,
   CreatePaymentMethodInput,
   CreateStoreHourInput,

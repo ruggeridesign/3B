@@ -1,4 +1,9 @@
-import { ORDER_TRANSITIONS, type Order, type OrderStatus } from '@3b/contracts';
+import {
+  ORDER_TRANSITIONS,
+  type Order,
+  type OrderStatus,
+  type PaymentReport,
+} from '@3b/contracts';
 import { cookies } from 'next/headers';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787';
@@ -63,12 +68,17 @@ export async function getStoreOrders(storeId: string): Promise<Order[]> {
 /** Una acción de transición ofrecida en la UI (estado destino + etiqueta). */
 export type OrderAction = { toStatus: OrderStatus; label: string };
 
-/** Estados a los que la UI puede mover un pedido en M5b (espeja el API). */
-const M5B_ENABLED = new Set<OrderStatus>([
+/**
+ * Estados a los que la UI puede mover un pedido por acción directa (espeja el
+ * allowlist del endpoint genérico). Las aristas de pago las dispara el flujo de
+ * `payments` (reportar/revisar), no estos botones.
+ */
+const GENERIC_ENABLED = new Set<OrderStatus>([
   'aceptado',
   'rechazado',
   'listo',
   'cancelado',
+  'en_preparacion',
 ]);
 
 const ACTION_LABEL: Partial<Record<OrderStatus, string>> = {
@@ -76,20 +86,38 @@ const ACTION_LABEL: Partial<Record<OrderStatus, string>> = {
   rechazado: 'Rechazar',
   listo: 'Marcar listo',
   cancelado: 'Cancelar',
+  en_preparacion: 'Preparar',
 };
 
 /**
  * Acciones disponibles desde `status` para un rol (`seller` = miembro de la
  * tienda; `maker` = comprador), según la máquina de estados (§6) y lo habilitado
- * en M5b. Se deriva de `ORDER_TRANSITIONS` (fuente única).
+ * por acción directa. Se deriva de `ORDER_TRANSITIONS` (fuente única).
  */
 export function orderActions(
   status: OrderStatus,
   role: 'seller' | 'maker',
 ): OrderAction[] {
   return ORDER_TRANSITIONS.filter(
-    (t) => t.from === status && t.by === role && M5B_ENABLED.has(t.to),
+    (t) => t.from === status && t.by === role && GENERIC_ENABLED.has(t.to),
   ).map((t) => ({ toStatus: t.to, label: ACTION_LABEL[t.to] ?? t.to }));
+}
+
+/** Reportes de pago de un pedido (Maker dueño o miembro de la tienda). */
+export async function getOrderPayments(id: string): Promise<PaymentReport[]> {
+  const cookie = await cookieHeader();
+  if (!cookie) return [];
+  try {
+    const res = await fetch(`${API}/v1/orders/${id}/payments`, {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { payments: PaymentReport[] };
+    return data.payments;
+  } catch {
+    return [];
+  }
 }
 
 /** Detalle de un pedido (Maker dueño o miembro de la tienda). null si falla. */

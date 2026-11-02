@@ -20,6 +20,7 @@ import {
 import { inventoryRouter } from '@3b/core/modules/inventory';
 import { type AuthorizeOwner, mediaRouter } from '@3b/core/modules/media';
 import { ordersRouter } from '@3b/core/modules/orders';
+import { paymentsRouter } from '@3b/core/modules/payments';
 import { storeRouter } from '@3b/core/modules/store';
 import { systemRouter } from '@3b/core/modules/system';
 import { createAppDb, sql, withAppContext } from '@3b/db';
@@ -129,6 +130,7 @@ app.route(
 );
 app.route('/v1', inventoryRouter());
 app.route('/v1', ordersRouter());
+app.route('/v1', paymentsRouter());
 
 // Documento OpenAPI (contrato de la API).
 app.doc('/openapi.json', {

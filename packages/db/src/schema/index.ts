@@ -4,5 +4,6 @@ export * from './identity';
 export * from './inventory';
 export * from './media';
 export * from './orders';
+export * from './payments';
 export * from './platform';
 export * from './store';

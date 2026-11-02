@@ -20,6 +20,7 @@ export { ordersRouter } from './http/routes';
 export {
   type CreateResult,
   createOrder,
+  freezeFxRate,
   getOrder,
   listMyOrders,
   listStoreOrders,

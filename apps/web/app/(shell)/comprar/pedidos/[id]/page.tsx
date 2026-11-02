@@ -3,11 +3,13 @@ import { redirect } from 'next/navigation';
 import { getMe } from '../../../../../lib/me';
 import {
   getOrder,
+  getOrderPayments,
   ORDER_STATUS_LABEL,
   type OrderAction,
   orderActions,
 } from '../../../../../lib/orders';
 import { OrderActions } from '../../../../_components/order-actions';
+import { PaymentPanel } from '../../../../_components/payment-panel';
 
 const FULFILLMENT_LABEL: Record<string, string> = {
   pickup: 'Retiro en tienda',
@@ -48,6 +50,8 @@ export default async function PedidoDetalle({
     );
   }
 
+  const payments = await getOrderPayments(id);
+
   // Rol del viewer frente a ESTE pedido: miembro de la tienda (Seller) y/o dueño
   // (Maker). Según eso se ofrecen las transiciones válidas (la API gatea igual).
   const isSeller = me.stores.some((s) => s.id === o.storeId);
@@ -82,6 +86,26 @@ export default async function PedidoDetalle({
       </div>
 
       {actions.length > 0 && <OrderActions orderId={o.id} actions={actions} />}
+
+      <PaymentPanel
+        orderId={o.id}
+        status={o.status}
+        isMaker={isMaker}
+        isSeller={isSeller}
+        payments={payments}
+        defaultAmount={o.total}
+        defaultCurrency={o.currency}
+      />
+
+      {o.fxRateVes && (
+        <p className="text-muted-foreground text-sm">
+          Tasa congelada: 1 {o.currency} = {o.fxRateVes} Bs · ≈{' '}
+          {(Number(o.total) * Number(o.fxRateVes)).toLocaleString('es-VE', {
+            maximumFractionDigits: 2,
+          })}{' '}
+          Bs
+        </p>
+      )}
 
       <section className="space-y-2">
         <h2 className="font-medium text-foreground">Líneas</h2>

@@ -42,8 +42,18 @@
   **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
   la proyección de ranking con señales de comportamiento).
 - **En curso:** **M3 · Inventario** (r1 hecha) y **M5 · Pedido end-to-end**
-  (**M5a — carrito + checkout** y **M5b — máquina de estados + reserva** hechos),
-  por rebanadas. Siguiente de M5: **M5c — pago por comprobante**.
+  (**M5a — carrito**, **M5b — máquina de estados + reserva** y **M5c — pago por
+  comprobante** hechos), por rebanadas. Siguiente de M5: **M5d — chat + social**.
+  - **M5c — pago por comprobante** (`payments`): módulo nuevo. El Maker reporta un
+    pago (`payment_reports`, **referencia única** P-1) sobre un pedido `aceptado` →
+    `pago_reportado`, congelando `fx_rate_ves` (P-2, tabla `fx_rates`); el Seller lo
+    **confirma** (`pago_confirmado`, salida) o **rechaza** (`pago_rechazado`, libera
+    la reserva). Las transiciones del pedido las dispara `payments` vía la API
+    pública de `orders` (nunca a mano); el endpoint genérico suma `en_preparacion`
+    para que el Seller siga de `pago_confirmado` a `listo`. Web: panel de pago en la
+    ficha (reportar / confirmar / rechazar) + tasa Bs congelada. **Difieren:** la
+    **captura** (`proof_media_id` listo, pero subida + visibilidad media→pedido
+    pendientes) y la carga automática de `fx_rates` (hoy por seed).
   - **M5b — máquina de estados + reserva** (`orders` + `inventory.reservations`):
     endpoint `POST /v1/orders/{id}/transition` que valida la arista (§6), reserva
     stock al `aceptado` y lo libera al cancelar, y deja la transición en la bitácora
@@ -95,8 +105,8 @@
     relevancia/recencia, usando las membresías del usuario (CTE bajo RLS). Satisface
     "(y vecinas)" y el "ranking básico". **Difiere**: `ranking.item_scores`
     (proyección con conversión/calidad) hasta **post-M5** (necesita pedidos/reseñas).
-  - **M4 cerrado** (salvo esa proyección). **M5a y M5b hechos** (ver arriba).
-    Siguiente de M5: **M5c** — pago por comprobante (`payments`).
+  - **M4 cerrado** (salvo esa proyección). **M5a, M5b y M5c hechos** (ver arriba).
+    Siguiente de M5: **M5d** — conversación + social (`messaging` + `social`).
 - **M2 (cerrado) · Tienda + Catálogo + núcleo de media**, por rebanadas
   verticales siguiendo `data-model.md §7`. HECHAS: **store 1 (alta)**, **2
   (equipo/roles)**, **3 (métodos de pago)**, **4 (horarios)**, **5 (KYC/
@@ -126,7 +136,74 @@
 
 ---
 
-## 2026-11-02 · _(este commit)_ · feat — M5b: máquina de estados del pedido + reserva de stock
+## 2026-11-02 · _(este commit)_ · feat — M5c: pago por comprobante (módulo `payments`)
+
+- **Qué:** tercera rebanada de **M5**. Módulo nuevo `payments`: el Maker **reporta
+  un pago** (método + **referencia bancaria única** + monto) sobre un pedido
+  `aceptado`, que pasa a `pago_reportado` y **congela `fx_rate_ves`** (P-2); el
+  Seller lo **confirma** (`pago_confirmado`) o lo **rechaza** (`pago_rechazado`, que
+  libera la reserva de stock). **Salida de M5c: el pedido llega a `pago_confirmado`.**
+  El endpoint genérico de transición ahora también habilita `en_preparacion`, con lo
+  que el Seller sigue hasta `listo`.
+- **Por qué:** cumple la _salida_ de M5c del roadmap y cierra el lazo pago↔pedido
+  (P-1/P-2/P-3): un comprobante mueve el pedido por la máquina de estados, sin poder
+  falsear estados de pago a mano.
+- **Impacto / archivos:**
+  - `packages/contracts/src/payments.ts` (+exports): `PaymentStatus`,
+    `PaymentReport`/`PaymentReportList`, `ReportPaymentInput`, `ReviewPaymentInput`,
+    `FxRate` (reusa `PaymentMethodType` de `store`).
+  - `packages/db/src/schema/payments.ts` (+`index.ts`, +`reset.ts`):
+    `payment_reports` (FK pedido/media/usuarios) y `fx_rates`. Migración
+    `0023_lumpy_slipstream.sql`: tablas + CHECKs + **`unique(method, reference)`**
+    (P-1) + RLS/grants (`fx_rates` SELECT público de solo lectura; `payment_reports`
+    SELECT Maker|tienda, INSERT solo el Maker dueño registrándose como reporter,
+    UPDATE solo miembros de la tienda). `@3b/db` exporta `isNull`.
+  - `packages/core/src/modules/orders/`: `freezeFxRate` (congela `fx_rate_ves` si era
+    nulo; +export) y el allowlist del endpoint genérico pasa a `GENERIC_TARGETS` con
+    `en_preparacion`.
+  - `packages/core/src/modules/payments/`: `infra/payment-repo.ts` (`reportPayment`
+    —pre-chequea P-1 → 409, congela fx, crea comprobante, `aceptado→pago_reportado`—;
+    `reviewPayment` —confirma/rechaza + transición—; `listPaymentsForOrder`),
+    `http/routes.ts` (`POST /orders/{id}/payments`, `GET …/payments`,
+    `POST …/payments/{paymentId}/review`), `index.ts`. `apps/api` monta
+    `paymentsRouter()`; `@3b/core` exporta `./modules/payments`.
+  - `apps/web`: `lib/orders.ts` (`getOrderPayments`, `en_preparacion`→"Preparar"),
+    `_components/payment-panel.tsx` (reportar / confirmar / rechazar + historial),
+    cableado en `comprar/pedidos/[id]` (+ muestra la tasa Bs congelada).
+  - `packages/db/src/seed.ts`: tasa `fx_rates` 2026-11-02 BCV 52.3600.
+- **Decisiones de diseño:**
+  - **`payments` dispara las transiciones del pedido, no el endpoint genérico:** así
+    no se puede setear `pago_*` sin un comprobante real. `payments` llama a `orders`
+    por su `index.ts` (`transitionOrder`/`getOrder`/`freezeFxRate`); `payments →
+    orders → inventory`, sin ciclo.
+  - **fx se congela al reportar, no al crear:** evita acoplar `orders → payments`
+    (que generaría un ciclo con las transiciones). `orders.freezeFxRate` es
+    idempotente (solo si `fx_rate_ves` era nulo); `payments` le pasa la tasa vigente.
+    Relaja el "al crearlo" de P-2 a "al reportar" (cuando el monto en Bs importa).
+  - **RLS por rol derivada del pedido:** reportar = Maker dueño; revisar = miembro de
+    la tienda; ver = ambos. P-1 `unique(method, reference)` global con pre-chequeo
+    (409 limpio) + índice único como candado final.
+  - **Captura (`proof_media_id`) diferida:** la columna/FK quedan listas, pero la
+    subida del comprobante y su **visibilidad cruzada** (policy `media → pedido` para
+    que el Seller vea la captura del comprador) van en una rebanada posterior.
+- **Verificación:** `pnpm check` **verde** (typecheck 10/10, unit 19/19, boundaries
+  **360 módulos** sin violaciones). `pnpm test:integration`: db 6/6 + **core 82/82**
+  (+6 de M5c: reportar + congelar fx, referencia duplicada P-1, estado inválido,
+  confirmar → `pago_confirmado`, rechazar → libera reserva, RLS tercero no reporta/ve).
+  Smoke HTTP: Carlos acepta; el Seller (no comprador) reportando **403**; Lucía
+  reporta **201** (`pago_reportado`, `fxRateVes` 52.3600); Pedro revisando **404**
+  (RLS); Carlos confirma **200** → `pago_confirmado`; luego `en_preparacion`/`listo`
+  200.
+- **Estado para retomar:** **M5c cerrado** (el pedido llega a `pago_confirmado` y el
+  Seller sigue hasta `listo`). Siguiente: **M5d — conversación + social**
+  (`messaging` chat contextual ítem/pedido + `social` preguntas públicas y reseñas
+  verificadas al `completado`). Pendientes de infra que arrastra M5: **worker +
+  Valkey** (vencer reservas I-5 + `stock.changed`), el **`consumed`** (venta) del
+  flujo de entrega en M6, y la **captura** del pago (policy media→pedido).
+- **Relacionado:** ROADMAP M5 (M5a–M5d), `data-model.md` §3 (payments), §5 (P-1…P-3),
+  §6, D-03/D-10; entradas de M5a y M5b.
+
+## 2026-11-02 · `dee714c` · feat — M5b: máquina de estados del pedido + reserva de stock
 
 - **Qué:** segunda rebanada de **M5 · Pedido end-to-end**. El pedido deja de ser un
   libro de solo inserción: ahora se mueve por la **máquina de estados** (§6). Nuevo
