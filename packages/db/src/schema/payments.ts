@@ -54,6 +54,8 @@ export const paymentReports = payments.table(
     // P-1: una referencia (por método) no se reporta dos veces.
     unique('payment_reports_method_reference_unique').on(t.method, t.reference),
     index('payment_reports_order_idx').on(t.orderId),
+    // Lookup inverso media→reporte (policy de visibilidad de la captura, M5c.2).
+    index('payment_reports_proof_idx').on(t.proofMediaId),
   ],
 );
 

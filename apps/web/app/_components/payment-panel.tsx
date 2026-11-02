@@ -1,19 +1,45 @@
 'use client';
 
 import type {
+  CreateMediaResponse,
   OrderStatus,
   PaymentMethodType,
   PaymentReport,
 } from '@3b/contracts';
 import { Button, cn, Input, Label } from '@3b/ui';
 import { useRouter } from 'next/navigation';
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 
 const fieldClass = cn(
   'h-9 w-full rounded-md border border-input bg-field px-3 text-sm',
   'transition-colors focus-visible:outline-none focus-visible:ring-2',
   'focus-visible:ring-ring',
 );
+
+const PROOF_MIMES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'];
+
+/**
+ * Sube el comprobante (captura) en dos fases y lo marca listo. Es media propia
+ * del comprador (`ownerType: 'user'`); la visibilidad cruzada al Seller la da la
+ * policy `media_select_payment_proof` (vía `payment_reports.proof_media_id`).
+ */
+async function uploadProof(file: File, meId: string): Promise<string> {
+  const createRes = await fetch('/v1/media', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ownerType: 'user', ownerId: meId, mime: file.type }),
+  });
+  if (!createRes.ok) throw new Error('No se pudo iniciar la subida.');
+  const { media, upload } = (await createRes.json()) as CreateMediaResponse;
+  const putRes = await fetch(upload.url, {
+    method: upload.method,
+    headers: upload.headers,
+    body: file,
+  });
+  if (!putRes.ok) throw new Error('No se pudo subir el comprobante.');
+  await fetch(`/v1/media/${media.id}/complete`, { method: 'POST' });
+  return media.id;
+}
 
 const METHOD_LABEL: Record<PaymentMethodType, string> = {
   pago_movil: 'Pago móvil',
@@ -41,7 +67,9 @@ export function PaymentPanel({
   status,
   isMaker,
   isSeller,
+  meId,
   payments,
+  proofUrls,
   defaultAmount,
   defaultCurrency,
 }: {
@@ -49,7 +77,9 @@ export function PaymentPanel({
   status: OrderStatus;
   isMaker: boolean;
   isSeller: boolean;
+  meId: string;
   payments: PaymentReport[];
+  proofUrls: Record<string, string>;
   defaultAmount: string;
   defaultCurrency: string;
 }) {
@@ -57,6 +87,8 @@ export function PaymentPanel({
   const methodId = useId();
   const refId = useId();
   const amountId = useId();
+  const proofId = useId();
+  const proofRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -68,25 +100,41 @@ export function PaymentPanel({
     setError(null);
     const form = new FormData(e.currentTarget);
     setBusy(true);
-    const res = await fetch(`/v1/orders/${orderId}/payments`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        method: form.get('method'),
-        reference: String(form.get('reference') ?? '').trim(),
-        amount: String(form.get('amount') ?? '').trim(),
-        currency: defaultCurrency,
-      }),
-    });
-    setBusy(false);
-    if (res.ok) {
-      router.refresh();
-      return;
+    try {
+      const file = proofRef.current?.files?.[0];
+      let proofMediaId: string | undefined;
+      if (file) {
+        if (!PROOF_MIMES.includes(file.type)) {
+          setError('Formato de captura no soportado (JPG, PNG, WebP o AVIF).');
+          setBusy(false);
+          return;
+        }
+        proofMediaId = await uploadProof(file, meId);
+      }
+      const res = await fetch(`/v1/orders/${orderId}/payments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          method: form.get('method'),
+          reference: String(form.get('reference') ?? '').trim(),
+          amount: String(form.get('amount') ?? '').trim(),
+          currency: defaultCurrency,
+          proofMediaId,
+        }),
+      });
+      if (res.ok) {
+        router.refresh();
+        return;
+      }
+      const data = (await res.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      setError(data?.error ?? 'No se pudo reportar el pago.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo reportar.');
+    } finally {
+      setBusy(false);
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    setError(data?.error ?? 'No se pudo reportar el pago.');
   }
 
   async function review(paymentId: string, decision: 'confirm' | 'reject') {
@@ -120,43 +168,63 @@ export function PaymentPanel({
 
       {payments.length > 0 && (
         <ul className="space-y-2">
-          {payments.map((p) => (
-            <li
-              key={p.id}
-              className="glass flex flex-wrap items-center justify-between gap-2 rounded-lg p-3"
-            >
-              <div className="min-w-0">
-                <p className="font-medium text-foreground text-sm">
-                  {METHOD_LABEL[p.method]} · ref. {p.reference}
-                  <span className="ml-2 rounded-md bg-seller/20 px-1.5 py-0.5 align-middle text-foreground text-xs">
-                    {STATUS_LABEL[p.status]}
-                  </span>
-                </p>
-                <p className="text-muted-foreground text-xs">
-                  {p.currency} {p.amount}
-                </p>
-              </div>
-              {canReview && p.status === 'reported' && (
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => review(p.id, 'confirm')}
-                  >
-                    Confirmar
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() => review(p.id, 'reject')}
-                  >
-                    Rechazar
-                  </Button>
+          {payments.map((p) => {
+            const proof = p.proofMediaId
+              ? proofUrls[p.proofMediaId]
+              : undefined;
+            return (
+              <li
+                key={p.id}
+                className="glass flex flex-wrap items-center justify-between gap-2 rounded-lg p-3"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium text-foreground text-sm">
+                    {METHOD_LABEL[p.method]} · ref. {p.reference}
+                    <span className="ml-2 rounded-md bg-seller/20 px-1.5 py-0.5 align-middle text-foreground text-xs">
+                      {STATUS_LABEL[p.status]}
+                    </span>
+                  </p>
+                  <p className="text-muted-foreground text-xs">
+                    {p.currency} {p.amount}
+                  </p>
                 </div>
-              )}
-            </li>
-          ))}
+                {canReview && p.status === 'reported' && (
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => review(p.id, 'confirm')}
+                    >
+                      Confirmar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => review(p.id, 'reject')}
+                    >
+                      Rechazar
+                    </Button>
+                  </div>
+                )}
+                {proof && (
+                  <a
+                    href={proof}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full"
+                  >
+                    {/* biome-ignore lint/performance/noImgElement: storage local de dev; next/image llega con el pulido visual */}
+                    <img
+                      src={proof}
+                      alt="Comprobante de pago"
+                      className="h-32 w-auto rounded-md border border-border object-contain"
+                    />
+                  </a>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -188,6 +256,16 @@ export function PaymentPanel({
                 inputMode="decimal"
                 defaultValue={defaultAmount}
                 className="w-28"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={proofId}>Captura (opcional)</Label>
+              <input
+                ref={proofRef}
+                id={proofId}
+                type="file"
+                accept={PROOF_MIMES.join(',')}
+                className="block text-foreground text-sm"
               />
             </div>
             <Button type="submit" size="sm" disabled={busy}>

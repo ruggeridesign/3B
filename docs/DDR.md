@@ -41,12 +41,17 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
   **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
   la proyección de ranking con señales de comportamiento).
-- **En curso:** **M3 · Inventario** (r1 hecha) y **M5 · Pedido end-to-end**
-  (**M5a — carrito**, **M5b — máquina de estados + reserva**, **M5c — pago por
-  comprobante**, **M5d.1 — chat**, **M5d.2 — reseñas**, **M5d.3 — preguntas** y
-  **M5d.4 — reportes** hechos). **M5d completo**. **Cerrando M5 (features):** falta la
-  **captura del pago** (media→pedido); el **worker/Valkey** queda como su propia
-  rebanada de infra.
+- **En curso / M5 cerrado (features):** **M5 · Pedido end-to-end** completo a nivel
+  de features — **M5a** carrito, **M5b** estados + reserva, **M5c** pago por
+  comprobante **+ M5c.2 captura**, **M5d.1** chat, **M5d.2** reseñas, **M5d.3**
+  preguntas, **M5d.4** reportes. **Único pendiente de M5: la infra worker + Valkey**
+  (vencer reservas I-5, `stock.changed`, particiones mensuales + retención de
+  `messages`), que es su propia rebanada. **M3 · Inventario** r1 hecha (arrastra el
+  mismo worker). Después: **M6 · Envíos** (y ahí el `consume` real de stock).
+  - **M5c.2 — captura del pago** (`media_select_payment_proof`): la imagen del
+    comprobante que sube el comprador (media propia) se vuelve visible a la tienda vía
+    una policy que la enlaza por `payment_reports.proof_media_id`. Web: subida +
+    visualización en el panel de pago.
   - **M5d.4 — reportes** (`social.reports`): moderación. Cualquiera que ve la
     comunidad reporta contenido (item/review/question/store, `community_id` derivado
     del target); el admin de la comunidad/plataforma resuelve. Web: "Reportar" en la
@@ -165,7 +170,48 @@
 
 ---
 
-## 2026-11-02 · _(este commit)_ · feat — M5d.4: reportes de moderación (`social.reports`)
+## 2026-11-02 · _(este commit)_ · feat — M5c.2: captura del pago (visibilidad media→pedido)
+
+- **Qué:** cierra el pendiente de **M5c**: la **captura** del comprobante. El
+  comprador adjunta una imagen al reportar el pago (`proof_media_id`, ya previsto) y
+  ahora la **tienda la ve** gracias a una policy de visibilidad cruzada
+  `media_select_payment_proof`. Web: el panel de pago sube la captura (media propia
+  `ownerType:'user'`, dos fases) y muestra la imagen a ambas partes.
+- **Por qué:** era el último feature diferido de M5 (junto con social): sin esto el
+  Seller no podía ver el comprobante que sube el comprador.
+- **Impacto / archivos:**
+  - `packages/db/src/schema/payments.ts`: índice `payment_reports_proof_idx`
+    (lookup inverso de la policy). Migración `0028_smiling_lester.sql`: el índice +
+    **policy permissive** `media_select_payment_proof` (la media referenciada por un
+    `payment_reports.proof_media_id` es visible a los participantes del pedido —Maker
+    o miembro de la tienda—; mismo patrón que `media_select_item` de M4 o la de KYC).
+  - `apps/web`: `lib/orders.ts` (`getMediaUrl`); `comprar/pedidos/[id]` resuelve las
+    URLs de las capturas y las pasa al panel; `_components/payment-panel.tsx` (subida
+    de la captura en el reporte + visualización de la imagen del comprobante).
+- **Decisiones de diseño:**
+  - **Visibilidad por referencia, no por dueño:** la captura la sube el comprador
+    como media propia (`ownerType:'user'`, que ya autoriza `authorizeOwner`); la
+    policy la abre a la contraparte **vía el enlace del comprobante** (RLS pura; `GET
+    /media/{id}` ya se apoya en RLS, como con KYC). Sin acoplar media→payments en el
+    código ni tocar `authorizeOwner`.
+  - **Índice como vehículo de la migración:** la policy es solo-SQL (sin cambio de
+    esquema que genere migración); se la ancla a un índice útil en `proof_media_id`
+    (que además acelera el `EXISTS` de la policy), evitando editar journal/snapshot a
+    mano.
+- **Verificación:** `pnpm check` **verde** (lint, typecheck 10/10, unit 19/19,
+  boundaries **384 módulos**). `pnpm test:integration`: db 6/6 + **core 101/101** (+2
+  de M5c.2: la captura la ve la tienda y no un tercero; control de que una media no
+  adjunta no se ve). El test adjunta el comprobante con un insert directo de
+  `payment_reports` (sin aceptar el pedido → sin reserva, sin contención).
+- **Estado para retomar:** **M5 cerrado a nivel features** (carrito → pago con
+  captura → estados → chat + reseñas + preguntas + reportes). Único pendiente de M5:
+  **infra worker + Valkey** (vencer reservas I-5, `stock.changed`, particiones
+  mensuales + retención de `messages`), que es su propia rebanada. Después: **M6 ·
+  Envíos** (y ahí el `consume` real de stock del flujo de entrega).
+- **Relacionado:** ROADMAP M5, `data-model.md` §3 (payments/media), D-03/D-10;
+  entradas de M5c y M4 r2 (patrón de visibilidad de media).
+
+## 2026-11-02 · `3d585d4` · feat — M5d.4: reportes de moderación (`social.reports`)
 
 - **Qué:** cuarta rebanada de **M5d**. Moderación de contenido: cualquiera que ve la
   comunidad **reporta** un contenido (`item`/`review`/`question`/`store`) con un

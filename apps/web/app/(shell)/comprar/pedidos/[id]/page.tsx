@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getMe } from '../../../../../lib/me';
 import { getOrderThread } from '../../../../../lib/messaging';
 import {
+  getMediaUrl,
   getOrder,
   getOrderPayments,
   ORDER_STATUS_LABEL,
@@ -58,6 +59,23 @@ export default async function PedidoDetalle({
   const thread = await getOrderThread(id);
   const reviews = await getOrderReviews(id);
 
+  // URLs de las capturas de pago (visibles para ambas partes por la policy
+  // media→pedido, M5c.2). Se resuelven acá para no exponer el id crudo.
+  const proofUrls: Record<string, string> = {};
+  for (const [mid, url] of await Promise.all(
+    payments
+      .filter((p) => p.proofMediaId)
+      .map(
+        async (p) =>
+          [
+            p.proofMediaId as string,
+            await getMediaUrl(p.proofMediaId as string),
+          ] as const,
+      ),
+  )) {
+    if (url) proofUrls[mid] = url;
+  }
+
   // Rol del viewer frente a ESTE pedido: miembro de la tienda (Seller) y/o dueño
   // (Maker). Según eso se ofrecen las transiciones válidas (la API gatea igual).
   const isSeller = me.stores.some((s) => s.id === o.storeId);
@@ -106,7 +124,9 @@ export default async function PedidoDetalle({
         status={o.status}
         isMaker={isMaker}
         isSeller={isSeller}
+        meId={me.user.id}
         payments={payments}
+        proofUrls={proofUrls}
         defaultAmount={o.total}
         defaultCurrency={o.currency}
       />

@@ -124,6 +124,23 @@ export async function getOrderPayments(id: string): Promise<PaymentReport[]> {
   }
 }
 
+/** URL de lectura de una media por id (la RLS acota la visibilidad). null si falla. */
+export async function getMediaUrl(id: string): Promise<string | null> {
+  const cookie = await cookieHeader();
+  if (!cookie) return null;
+  try {
+    const res = await fetch(`${API}/v1/media/${id}`, {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const m = (await res.json()) as { url?: string };
+    return m.url ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Detalle de un pedido (Maker dueño o miembro de la tienda). null si falla. */
 export async function getOrder(id: string): Promise<Order | null> {
   const cookie = await cookieHeader();
