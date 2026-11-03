@@ -1,4 +1,5 @@
 import {
+  index,
   numeric,
   pgSchema,
   text,
@@ -7,6 +8,9 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { timestamps } from './_shared';
+import { communities } from './community';
+import { orderRecords } from './orders';
+import { shipments } from './shipping';
 import { stores } from './store';
 
 // Esquema `billing`: planes y suscripciones de tienda (M7a). Las comisiones
@@ -47,4 +51,59 @@ export const subscriptions = billing.table(
     ...timestamps,
   },
   (t) => [unique('subscriptions_store_unique').on(t.storeId)],
+);
+
+/**
+ * Parámetros de billing (clave/valor). Hoy guarda `commission_rate` (fracción
+ * 0..1), cargada por el seed desde `COMMISSION_RATE`. La leen los triggers de
+ * devengo (owner); la app no accede (owner-only).
+ */
+export const billingConfig = billing.table('config', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  ...timestamps,
+});
+
+/**
+ * Comisión **devengada** (solo inserción). Sujeto polimórfico (`store` en ventas,
+ * `mover` en envíos) para soportar el billing de ambos. `community_id` se
+ * denormaliza (alcance de admins). Una por pedido (`unique(order_id)`) y una por
+ * envío (`unique(shipment_id)`); los NULL no colisionan. La escriben triggers
+ * definer (al `completado` del pedido y al `entregado` del envío); la app solo lee.
+ */
+export const feeAccruals = billing.table(
+  'fee_accruals',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    subjectType: text('subject_type').notNull(), // store | mover
+    subjectId: uuid('subject_id').notNull(),
+    kind: text('kind').notNull(), // sale | shipment
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    currency: text('currency').notNull().default('USD'),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id, { onDelete: 'restrict' }),
+    orderId: uuid('order_id').references(() => orderRecords.id, {
+      onDelete: 'set null',
+    }),
+    shipmentId: uuid('shipment_id').references(() => shipments.id, {
+      onDelete: 'set null',
+    }),
+    accruedAt: timestamp('accrued_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    unique('fee_accruals_order_unique').on(t.orderId),
+    unique('fee_accruals_shipment_unique').on(t.shipmentId),
+    index('fee_accruals_subject_idx').on(
+      t.subjectType,
+      t.subjectId,
+      t.accruedAt,
+    ),
+    index('fee_accruals_community_idx').on(t.communityId),
+  ],
 );

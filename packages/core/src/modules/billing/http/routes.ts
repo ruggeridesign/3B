@@ -2,6 +2,7 @@ import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import { type ApiVariables, requireSession, sessionCtx } from '../../../http';
 import {
   getSubscription,
+  listFeeAccruals,
   listPlans,
   setSubscription,
 } from '../infra/billing-repo';
@@ -45,6 +46,25 @@ const setSubBody = z
     periodEnd: z.string().datetime().optional(),
   })
   .openapi('SetSubscription');
+
+const feeOut = z
+  .object({
+    id: z.string(),
+    subjectType: z.enum(['store', 'mover']),
+    subjectId: z.string(),
+    kind: z.enum(['sale', 'shipment']),
+    amount: money,
+    currency,
+    communityId: z.string(),
+    orderId: z.string().nullable(),
+    shipmentId: z.string().nullable(),
+    accruedAt: z.string(),
+  })
+  .openapi('FeeAccrual');
+
+const feeListOut = z
+  .object({ accruals: z.array(feeOut), total: money, currency })
+  .openapi('FeeAccrualList');
 
 const errorSchema = z.object({ error: z.string() }).openapi('BillingError');
 
@@ -160,6 +180,58 @@ export function billingRouter() {
         return c.json({ error: 'No existe o no podés cambiarla.' }, 404);
       }
       return c.json(res.subscription, 200);
+    },
+  );
+
+  // Comisiones devengadas de una tienda (equipo o admin).
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/stores/{id}/fee-accruals',
+      tags: ['billing'],
+      summary: 'Comisiones devengadas de la tienda',
+      request: { params: storeParam },
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: feeListOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      const fees = await listFeeAccruals(db, 'store', id);
+      return c.json(fees, 200);
+    },
+  );
+
+  // Mis comisiones devengadas como Mover.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/me/fee-accruals',
+      tags: ['billing'],
+      summary: 'Mis comisiones devengadas (Mover)',
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: feeListOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db, userId } = sessionCtx(c);
+      const fees = await listFeeAccruals(db, 'mover', userId);
+      return c.json(fees, 200);
     },
   );
 

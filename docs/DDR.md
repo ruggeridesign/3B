@@ -41,14 +41,15 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
   **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
   la proyección de ranking con señales de comportamiento).
-- **En curso: M7 · Billing + panel de comunidad.** **M7a — planes + suscripciones**
-  hecho (módulo `billing`): `plans` (seller_products/services) + `subscriptions` (una
-  por tienda; nace `trial` por trigger al crear la tienda; la cambia un admin). Web:
-  estado en `mi-tienda`. **Decisiones del hito:** comisión **% por env** y **billing
-  de Movers desde M7b** (`fee_accruals`/`statements` polimórficos `store`|`mover`).
-  **Siguiente: M7b** (comisiones devengadas: venta→tienda al `completado`,
-  envío→Mover al `entregado`), luego **M7c** (estados de cuenta, pago por comprobante
-  D-03) y **M7d** (panel de comunidad: KYC + cobros + reportes + métricas).
+- **En curso: M7 · Billing + panel de comunidad.** **M7a — planes + suscripciones** y
+  **M7b — comisiones devengadas** hechos (módulo `billing`): `plans` + `subscriptions`
+  (una por tienda; `trial` por trigger; la cambia un admin) y `fee_accruals`
+  (polimórfico `store`|`mover`): al `completado` devenga comisión de venta a la tienda
+  (+ `orders.fee_amount`) y al `entregado` comisión de envío al Mover (S-3), vía
+  triggers definer; la tasa es **% por env** (`COMMISSION_RATE` → `billing.config`).
+  Web: estado + comisiones en `mi-tienda` y `/mover`. **Siguiente: M7c** (estados de
+  cuenta `statements` por tienda/Mover; pago por comprobante vía `statement_id`,
+  D-03), luego **M7d** (panel de comunidad: KYC + cobros + reportes + métricas).
 - **M6 · Envíos y rastreo — CERRADO.** **M6a — solicitud + ofertas** y **M6b —
   asignación + PIN** (módulo `shipping`): el Seller solicita un envío para un
   pedido `delivery`; los Movers aprobados que operan en la comunidad ofertan →
@@ -205,7 +206,56 @@
 
 ---
 
-## 2026-11-03 · _(este commit)_ · feat — M7a: billing — planes + suscripciones (módulo `billing`)
+## 2026-11-03 · _(este commit)_ · feat — M7b: billing — comisiones devengadas (`fee_accruals`)
+
+- **Qué:** segunda rebanada de **M7**. Al `completado` de un pedido se **devenga una
+  comisión de venta** a la tienda (`total × commission_rate`, grabada además en
+  `orders.fee_amount`); al `entregado` de un envío se devenga una **comisión de envío**
+  al **Mover** (`agreed_price × rate`, S-3). `fee_accruals` es **polimórfico por sujeto
+  (`store`|`mover`)**, solo inserción. La tasa es **% por env** (`COMMISSION_RATE`),
+  cargada en `billing.config` por el seed; los triggers la leen de ahí. Web:
+  comisiones devengadas en `mi-tienda` y en `/mover`.
+- **Por qué:** cumple "comisiones devengadas" de M7 y conecta billing con los hitos de
+  pedido (O-3) y envío (S-3); alimenta los estados de cuenta (M7c).
+- **Impacto / archivos:**
+  - `packages/config/src/env.ts` (+`.env.example`): `COMMISSION_RATE` (default 0.05).
+  - `packages/contracts/src/billing.ts` (+exports): `FeeSubjectType`, `FeeKind`,
+    `FeeAccrual`, `FeeAccrualList`.
+  - `packages/db/src/schema/billing.ts` (+migración `0035_flashy_punisher.sql`):
+    `config` (clave/valor, owner-only) + `fee_accruals` (sujeto polimórfico;
+    `unique(order_id)` y `unique(shipment_id)` — NULL no colisiona). CHECKs + RLS/grants
+    (solo lectura para `app`; la ve el sujeto o un admin) + **2 triggers definer**:
+    `tg_accrue_sale` (BEFORE UPDATE en `orders`, al `completado`: setea `fee_amount` +
+    inserta la comisión de venta) y `tg_accrue_shipment` (AFTER UPDATE en `shipments`,
+    al `entregado`: comisión del Mover). Seed: `commission_rate` desde env.
+  - `packages/core/src/modules/billing/`: `infra/billing-repo.ts` (`listFeeAccruals`
+    —suma el total en centavos—), rutas `GET /stores/{id}/fee-accruals` y
+    `GET /me/fee-accruals` (Mover).
+  - `apps/web`: `lib/billing.ts` (`getStoreFeeAccruals`/`getMyFeeAccruals`), total en
+    `mi-tienda` y `/mover`.
+- **Decisiones de diseño:**
+  - **Devengo por triggers definer (billing escucha, sin acoplar):** la venta la
+    dispara el pedido al `completado`; el envío, la entrega. Billing "escucha" por
+    trigger (no `orders/shipping → billing`). Una comisión por pedido/envío (unique +
+    guard de transición → idempotente).
+  - **Tasa por env en la DB:** el % vive en `billing.config` (sembrado desde
+    `COMMISSION_RATE`), para que los triggers (SQL) la lean sin leer env; cambiarla =
+    re-seed o `UPDATE` del admin.
+  - **`fee_accruals` polimórfico:** generaliza el `store_id` del modelo a
+    `subject_type`+`subject_id` para soportar también a los Movers (decisión del hito).
+- **Verificación:** `pnpm check` **verde** (lint, typecheck 10/10, unit 19/19,
+  boundaries **417 módulos**). `pnpm test:integration`: db 6/6 + **core 124/124** (+2
+  de M7b: venta→comisión a la tienda + `fee_amount` + RLS (tercero no ve, admin sí);
+  envío→comisión al Mover). El trigger de venta (BEFORE UPDATE global en `orders`) no
+  rompió ningún test.
+- **Estado para retomar:** **M7c — estados de cuenta** (`statements` por tienda/Mover:
+  suscripción + comisiones del período; **pago por comprobante** reusando M5c vía
+  `statement_id` (D-03: ALTER `payment_reports`); el admin confirma el cobro).
+  Generación mensual = job del worker. Luego **M7d** panel de comunidad.
+- **Relacionado:** ROADMAP M7, `data-model.md` §2.5 (fee_accruals), §5 (O-3/S-3);
+  entrada de M7a.
+
+## 2026-11-03 · `cd5f74a` · feat — M7a: billing — planes + suscripciones (módulo `billing`)
 
 - **Qué:** arranca **M7 · Billing**. Módulo nuevo `billing`: tabla `plans`
   (`seller_products`/`seller_services`, precio mensual, lectura pública) y

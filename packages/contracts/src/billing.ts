@@ -62,3 +62,34 @@ export const SetSubscriptionInput = z.object({
   periodEnd: z.string().datetime().optional(),
 });
 export type SetSubscriptionInput = z.infer<typeof SetSubscriptionInput>;
+
+/** A quién se le devenga una comisión (D-04 del modelo, generalizado para M7). */
+export const FeeSubjectType = z.enum(['store', 'mover']);
+export type FeeSubjectType = z.infer<typeof FeeSubjectType>;
+
+/** Tipo de comisión: venta (al `completado`) o envío (al `entregado`, S-3). */
+export const FeeKind = z.enum(['sale', 'shipment']);
+export type FeeKind = z.infer<typeof FeeKind>;
+
+/** Una comisión **devengada** (solo inserción). */
+export const FeeAccrual = z.object({
+  id: z.string(),
+  subjectType: FeeSubjectType,
+  subjectId: z.string(),
+  kind: FeeKind,
+  amount: money,
+  currency,
+  communityId: z.string(),
+  orderId: z.string().nullable(),
+  shipmentId: z.string().nullable(),
+  accruedAt: z.string(),
+});
+export type FeeAccrual = z.infer<typeof FeeAccrual>;
+
+/** Comisiones devengadas de un sujeto + su total (en la moneda base). */
+export const FeeAccrualList = z.object({
+  accruals: z.array(FeeAccrual),
+  total: money,
+  currency,
+});
+export type FeeAccrualList = z.infer<typeof FeeAccrualList>;

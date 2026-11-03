@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import {
+  getStoreFeeAccruals,
   getSubscription,
   SUBSCRIPTION_STATUS_LABEL,
 } from '../../../../lib/billing';
@@ -85,6 +86,7 @@ export default async function StoreDetail({
     getStoreOrders(id),
   ]);
   const subscription = await getSubscription(id);
+  const fees = canManage ? await getStoreFeeAccruals(id) : null;
 
   return (
     <div className="space-y-6">
@@ -117,6 +119,11 @@ export default async function StoreDetail({
                 })}
               </span>
             )}
+          </p>
+        )}
+        {fees && Number(fees.total) > 0 && (
+          <p className="text-muted-foreground text-sm">
+            Comisiones devengadas: {fees.currency} {fees.total}
           </p>
         )}
       </div>

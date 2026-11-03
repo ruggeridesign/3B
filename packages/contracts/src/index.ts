@@ -1,4 +1,8 @@
 export {
+  FeeAccrual,
+  FeeAccrualList,
+  FeeKind,
+  FeeSubjectType,
   Plan,
   PlanCode,
   PlanList,

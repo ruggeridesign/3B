@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { getMyFeeAccruals } from '../../../lib/billing';
 import { getMe } from '../../../lib/me';
 import { getAssignedShipments, getOpenShipments } from '../../../lib/shipping';
 import { MoverQueue } from '../../_components/mover-queue';
@@ -15,9 +16,10 @@ export default async function Mover() {
     redirect('/');
   }
 
-  const [open, assigned] = await Promise.all([
+  const [open, assigned, fees] = await Promise.all([
     getOpenShipments(),
     getAssignedShipments(),
+    getMyFeeAccruals(),
   ]);
   const activeTrips = assigned.filter(
     (s) => s.status !== 'entregado' && s.status !== 'fallido',
@@ -28,9 +30,13 @@ export default async function Mover() {
       <div className="space-y-1">
         <h1 className="font-bold text-2xl text-foreground">Mover</h1>
         <p className="text-muted-foreground text-sm">
-          Ofertá en solicitudes abiertas y seguí tus viajes asignados. El
-          rastreo en vivo llega pronto.
+          Ofertá en solicitudes abiertas y seguí tus viajes asignados.
         </p>
+        {fees && Number(fees.total) > 0 && (
+          <p className="text-muted-foreground text-sm">
+            Comisiones devengadas: {fees.currency} {fees.total}
+          </p>
+        )}
       </div>
 
       {activeTrips.length > 0 && (

@@ -1,5 +1,12 @@
-import type { Plan, SetSubscriptionInput, Subscription } from '@3b/contracts';
-import { type AppTransaction, eq, schema } from '@3b/db';
+import type {
+  FeeAccrual,
+  FeeAccrualList,
+  FeeSubjectType,
+  Plan,
+  SetSubscriptionInput,
+  Subscription,
+} from '@3b/contracts';
+import { type AppTransaction, and, desc, eq, schema } from '@3b/db';
 
 type PlanRow = typeof schema.plans.$inferSelect;
 type SubRow = typeof schema.subscriptions.$inferSelect;
@@ -91,4 +98,54 @@ export async function setSubscription(
 
   const sub = await getSubscription(db, storeId);
   return { status: 'ok', subscription: sub as Subscription };
+}
+
+type FeeRow = typeof schema.feeAccruals.$inferSelect;
+
+function toFeeAccrual(row: FeeRow): FeeAccrual {
+  return {
+    id: row.id,
+    subjectType: row.subjectType as FeeAccrual['subjectType'],
+    subjectId: row.subjectId,
+    kind: row.kind as FeeAccrual['kind'],
+    amount: row.amount,
+    currency: row.currency,
+    communityId: row.communityId,
+    orderId: row.orderId,
+    shipmentId: row.shipmentId,
+    accruedAt: row.accruedAt.toISOString(),
+  };
+}
+
+/**
+ * Comisiones devengadas de un sujeto (tienda o Mover), recientes primero, con su
+ * **total**. La RLS acota la visibilidad (el sujeto o un admin). El total se suma en
+ * centavos para no arrastrar error de punto flotante.
+ */
+export async function listFeeAccruals(
+  db: AppTransaction,
+  subjectType: FeeSubjectType,
+  subjectId: string,
+): Promise<FeeAccrualList> {
+  const rows = await db
+    .select()
+    .from(schema.feeAccruals)
+    .where(
+      and(
+        eq(schema.feeAccruals.subjectType, subjectType),
+        eq(schema.feeAccruals.subjectId, subjectId),
+      ),
+    )
+    .orderBy(desc(schema.feeAccruals.accruedAt));
+
+  const cents = rows.reduce(
+    (s, r) => s + Math.round(Number(r.amount) * 100),
+    0,
+  );
+  const currency = rows[0]?.currency ?? 'USD';
+  return {
+    accruals: rows.map(toFeeAccrual),
+    total: (cents / 100).toFixed(2),
+    currency,
+  };
 }

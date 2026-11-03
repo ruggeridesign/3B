@@ -3,6 +3,7 @@
 export { billingRouter } from './http/routes';
 export {
   getSubscription,
+  listFeeAccruals,
   listPlans,
   type SetSubscriptionResult,
   setSubscription,

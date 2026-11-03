@@ -166,6 +166,12 @@ async function main() {
     ])
     .onConflictDoNothing();
 
+  // Tasa de comisión de plataforma (billing, M7b): la leen los triggers de devengo.
+  await db
+    .insert(schema.billingConfig)
+    .values([{ key: 'commission_rate', value: String(env.COMMISSION_RATE) }])
+    .onConflictDoNothing();
+
   await db
     .insert(schema.stores)
     .values([
