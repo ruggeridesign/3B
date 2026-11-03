@@ -3,8 +3,19 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Worker de 3B (BullMQ + outbox + cron). Preparado para fases posteriores; no se ejecuta aún.",
+  "description": "Worker de 3B: vencimiento de reservas (I-5) + publisher del outbox a Valkey.",
   "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@3b/config": "workspace:*",
+    "@3b/core": "workspace:*",
+    "@3b/db": "workspace:*",
+    "ioredis": "^5.4.2"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15"
   }
 }

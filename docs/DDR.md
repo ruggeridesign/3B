@@ -41,13 +41,19 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
   **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
   la proyección de ranking con señales de comportamiento).
-- **En curso / M5 cerrado (features):** **M5 · Pedido end-to-end** completo a nivel
-  de features — **M5a** carrito, **M5b** estados + reserva, **M5c** pago por
-  comprobante **+ M5c.2 captura**, **M5d.1** chat, **M5d.2** reseñas, **M5d.3**
-  preguntas, **M5d.4** reportes. **Único pendiente de M5: la infra worker + Valkey**
-  (vencer reservas I-5, `stock.changed`, particiones mensuales + retención de
-  `messages`), que es su propia rebanada. **M3 · Inventario** r1 hecha (arrastra el
-  mismo worker). Después: **M6 · Envíos** (y ahí el `consume` real de stock).
+- **M5 · Pedido end-to-end — CERRADO (features + infra).** Rebanadas: **M5a**
+  carrito, **M5b** estados + reserva, **M5c** pago por comprobante **+ M5c.2 captura**,
+  **M5d.1** chat, **M5d.2** reseñas, **M5d.3** preguntas, **M5d.4** reportes, e
+  **infra.1** (outbox + vencimiento de reservas I-5) **+ infra.2** (worker runtime +
+  Valkey). **M3 · Inventario** cerrado a nivel infra también (el mismo worker).
+  **Siguiente hito: M6 · Envíos** (shipping/tracking, WebSockets + GEO; ahí el
+  `consume` real de stock del flujo de entrega). Mejora futura del worker (no bloquea):
+  particiones mensuales + retención 90 d de `messages` (D-08).
+  - **infra.2 — worker + Valkey**: `apps/worker` corre (owner) dos jobs: vencer
+    reservas (sweep) y publicar el outbox a Valkey pub/sub. Valkey en docker-compose
+    (6380). `drainOutbox`/`sweep…` viven en `@3b/core` (testeables sin broker).
+  - **infra.1 — outbox + I-5**: `platform.outbox` + `sweepExpiredReservations`
+    (libera reservas vencidas y emite `stock.changed` al outbox).
   - **M5c.2 — captura del pago** (`media_select_payment_proof`): la imagen del
     comprobante que sube el comprador (media propia) se vuelve visible a la tienda vía
     una policy que la enlaza por `payment_reports.proof_media_id`. Web: subida +
@@ -138,9 +144,9 @@
     relevancia/recencia, usando las membresías del usuario (CTE bajo RLS). Satisface
     "(y vecinas)" y el "ranking básico". **Difiere**: `ranking.item_scores`
     (proyección con conversión/calidad) hasta **post-M5** (necesita pedidos/reseñas).
-  - **M4 cerrado** (salvo esa proyección). **M5a–M5d hechos** (ver arriba): **M5
-    cerrado** salvo la infra (worker/Valkey) y los pendientes a M6. La proyección de
-    ranking con señales de comportamiento ya tiene insumos (pedidos + reseñas).
+  - **M4 cerrado** (salvo esa proyección). **M5 cerrado** (features + infra; ver
+    arriba). La proyección de ranking con señales de comportamiento ya tiene insumos
+    (pedidos + reseñas) para cuando se retome post-M5.
 - **M2 (cerrado) · Tienda + Catálogo + núcleo de media**, por rebanadas
   verticales siguiendo `data-model.md §7`. HECHAS: **store 1 (alta)**, **2
   (equipo/roles)**, **3 (métodos de pago)**, **4 (horarios)**, **5 (KYC/
@@ -158,19 +164,67 @@
   (proyección de búsqueda, va con M4), KYC de **movers** (M6) y los de Fase 2
   (`changesets`).
 - **Localhost demo:** `pnpm db:up` + `pnpm --filter @3b/api dev` (8787) +
-  `pnpm --filter @3b/web dev` (3000). Usuarios seed, password `Password123!`
+  `pnpm --filter @3b/web dev` (3000); opcional `pnpm --filter @3b/worker dev`
+  (vence reservas + publica a Valkey). Usuarios seed, password `Password123!`
   (carlos@3b.test = Seller con 2 tiendas e ítems; admin@3b.test = superadmin +
   "Ver como"). **Ojo:** `pnpm test:integration` resetea la DB (desloguea); re-seed
   con `pnpm db:reset` para el demo.
-- **Entorno:** DB en Docker, puerto **5433** (el 5432 es un Postgres nativo).
-  `pnpm check` debe quedar verde; `pnpm test:integration` corre RLS/RBAC contra
-  DB real. CI en GitHub Actions valida ambos en cada push/PR a `main`.
+- **Entorno:** Docker: Postgres puerto **5433** (el 5432 es un Postgres nativo) +
+  **Valkey** puerto **6380**. `pnpm check` debe quedar verde; `pnpm test:integration`
+  corre RLS/RBAC contra DB real. CI en GitHub Actions valida ambos en cada push/PR a
+  `main`.
 - **Git:** commits **directos a `main`** (dev extra: Raphaelofwar). Un commit por
   unidad lógica; cada uno con su entrada en este DDR.
 
 ---
 
-## 2026-11-02 · _(este commit)_ · feat — M5-infra.1: outbox + vencimiento de reservas (I-5)
+## 2026-11-02 · _(este commit)_ · feat — M5-infra.2: worker (runtime) + Valkey (pub/sub)
+
+- **Qué:** enciende **`apps/worker`** (dejaba de ser placeholder) y **Valkey**. El
+  worker corre dos jobs de sistema con la conexión **owner**: (1) **vencimiento de
+  reservas** (llama a `sweepExpiredReservations` cada `WORKER_SWEEP_INTERVAL_MS`) y
+  (2) **publisher del outbox** (`drainOutbox` cada `WORKER_OUTBOX_INTERVAL_MS`: lee
+  `platform.outbox` pendiente y publica cada evento en **Valkey** pub/sub, marcándolo
+  publicado). Con esto **M5 queda 100% cerrado** (features + infra).
+- **Por qué:** cierra la infra que arrastraban M5/M3: I-5 (vencer reservas de verdad)
+  y la emisión de `stock.changed` a un broker para consumidores en vivo.
+- **Impacto / archivos:**
+  - `docker-compose.yml`: servicio `valkey` (`valkey/valkey:8-alpine`, broker sin
+    persistencia, host **6380**). `pnpm db:up` ahora levanta Postgres + Valkey.
+  - `packages/config/src/env.ts`: `VALKEY_URL` (default `redis://localhost:6380`) +
+    `WORKER_SWEEP_INTERVAL_MS` (30 s) / `WORKER_OUTBOX_INTERVAL_MS` (2 s).
+  - `packages/core/src/modules/platform/`: `infra/outbox.ts` con
+    `drainOutbox(db, publish, limit)` (at-least-once; `publish` inyectable para
+    testear sin broker) + `index.ts`; `@3b/core` exporta `./modules/platform`.
+  - `apps/worker`: `package.json` (deps `@3b/core`/`@3b/db`/`@3b/config` + `ioredis`;
+    scripts `dev`/`start`), `src/index.ts` (loops sin solape + apagado ordenado
+    SIGINT/SIGTERM). `CLAUDE.md` actualizado (worker ya corre; Valkey en db:up).
+  - Test `outbox-drain.test.ts`: drena con un `publish` capturador; verifica
+    publicado + marcado + idempotencia.
+- **Decisiones de diseño:**
+  - **Lógica en core, runtime fino en el worker:** `drainOutbox`/`sweep…` viven en
+    `@3b/core` (testeables con DB, sin Valkey); `apps/worker` solo orquesta loops +
+    el cliente Valkey (inyecta `publish`).
+  - **Valkey como broker, outbox como fuente durable:** el broker no persiste (la
+    verdad está en `platform.outbox`); si Valkey se cae, el outbox retiene los
+    eventos y el publisher reintenta (at-least-once; consumidores idempotentes).
+  - **Puerto 6380** (como el 5433 de Postgres): deja libre el 6379 por si hay un Redis
+    nativo en la máquina.
+- **Verificación:** `pnpm check` **verde** (lint, typecheck **10/10** con el worker,
+  unit 19/19, boundaries **389 módulos**). `pnpm test:integration`: db 6/6 + **core
+  106/106** (+3 de drenado). **Smoke e2e:** `docker compose up -d valkey` (PONG) →
+  insertar un `stock.changed` en el outbox → `@3b/worker start` lo drena en el primer
+  tick (`eventos publicados: 1`) y lo deja `published_at` seteado.
+- **Estado para retomar:** **M5 cerrado (features + infra).** Mejora futura del
+  worker (no bloquea M5): **particionado mensual + retención 90 d de `messages`**
+  (D-08) como job programado; y cuando una transacción de negocio bajo `app` necesite
+  emitir eventos, sumar grant/policy de INSERT a `platform.outbox`. Siguiente hito:
+  **M6 · Envíos** (shipping/tracking, WebSockets + GEO; ahí el `consume` real de
+  stock del flujo de entrega).
+- **Relacionado:** ROADMAP M5 (infra) y M6, `data-model.md` §5 (I-5), §2.5 (outbox);
+  entrada de M5-infra.1.
+
+## 2026-11-02 · `01e0378` · feat — M5-infra.1: outbox + vencimiento de reservas (I-5)
 
 - **Qué:** primera rebanada de la **infra de M5** (la que cierra lo último que
   quedaba). Nueva tabla `platform.outbox` (patrón outbox) y un **job de sistema**

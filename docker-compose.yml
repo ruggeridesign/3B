@@ -25,5 +25,21 @@ services:
       timeout: 5s
       retries: 5
 
+  # Valkey (Redis-compatible): pub/sub del worker (publica `stock.changed`, etc.).
+  # Solo broker: sin persistencia (la fuente de verdad durable es platform.outbox).
+  # Puerto host 6380 (deja libre el 6379 por si hay un Redis nativo en la máquina).
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: 3b-valkey
+    restart: unless-stopped
+    command: ['valkey-server', '--save', '', '--appendonly', 'no']
+    ports:
+      - '127.0.0.1:6380:6379'
+    healthcheck:
+      test: ['CMD', 'valkey-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   3b-db-data:

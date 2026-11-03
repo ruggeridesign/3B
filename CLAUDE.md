@@ -36,7 +36,9 @@ cómo seguir). Reglas:
   consume `@3b/ui` y `@3b/api-client`.
 - **apps/api**: Hono + `@hono/zod-openapi` (OpenAPI en `/openapi.json`, docs en
   `/docs`). Monta los routers http de los módulos de `@3b/core`.
-- **apps/worker**: placeholder (BullMQ/outbox), no se ejecuta aún.
+- **apps/worker**: worker de sistema (corre con la conexión **owner**): vencimiento
+  de reservas (I-5) + **publisher** del outbox (`platform.outbox`) a **Valkey**
+  (pub/sub). `pnpm --filter @3b/worker dev`.
 - **packages/core**: lógica de negocio por módulo (`domain` / `application` /
   `http` / `infra` + `index.ts` como API pública). **Toda la lógica vive acá.**
 - **packages/contracts**: Zod (DTOs, enums, estados) — fuente única de verdad.
@@ -92,7 +94,7 @@ pnpm --filter @3b/web dev         # Next.js (puerto 3000)
 pnpm --filter @3b/api dev         # Hono + OpenAPI/docs (puerto 8787)
 
 # Base de datos (Docker Desktop instalado; Postgres en el puerto 5433):
-pnpm db:up                        # Postgres 17 + PostGIS (docker compose)
+pnpm db:up                        # Postgres 17 + PostGIS + Valkey (docker compose)
 pnpm db:migrate                   # aplica migraciones (Drizzle)
 pnpm db:seed                      # datos semilla deterministas
 pnpm db:reset                     # drop + migrate + seed (reinicio de desarrollo)
@@ -109,7 +111,7 @@ nativo de la máquina de dev, por eso el contenedor publica en **5433**.
 apps/
 ├── web/            # Next.js (App Router) — consume @3b/ui y @3b/api-client
 ├── api/            # Hono — monta los routers http de @3b/core
-└── worker/         # placeholder (no se ejecuta aún)
+└── worker/         # worker de sistema (sweep de reservas I-5 + outbox→Valkey)
 packages/
 ├── ui/             # Design system (shadcn/ui + tokens + Storybook)
 │   └── src/

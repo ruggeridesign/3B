@@ -18,6 +18,11 @@ const envSchema = z.object({
     .url()
     .default('postgresql://app:app@localhost:5433/3b'),
   API_PORT: z.coerce.number().int().positive().default(8787),
+  // Valkey (pub/sub del worker). Puerto host 6380 (ver docker-compose.yml).
+  VALKEY_URL: z.string().url().default('redis://localhost:6380'),
+  // Intervalos del worker (ms): barrido de reservas vencidas y drenado del outbox.
+  WORKER_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
+  WORKER_OUTBOX_INTERVAL_MS: z.coerce.number().int().positive().default(2_000),
   NEXT_PUBLIC_API_URL: z.string().url().default('http://localhost:8787'),
   // Origen de la app web (para CORS / trustedOrigins de Better Auth).
   WEB_URL: z.string().url().default('http://localhost:3000'),

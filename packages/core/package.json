@@ -17,6 +17,7 @@
     "./modules/messaging": "./src/modules/messaging/index.ts",
     "./modules/orders": "./src/modules/orders/index.ts",
     "./modules/payments": "./src/modules/payments/index.ts",
+    "./modules/platform": "./src/modules/platform/index.ts",
     "./modules/social": "./src/modules/social/index.ts"
   },
   "scripts": {
