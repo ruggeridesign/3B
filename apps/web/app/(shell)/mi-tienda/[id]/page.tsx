@@ -1,6 +1,10 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import {
+  getSubscription,
+  SUBSCRIPTION_STATUS_LABEL,
+} from '../../../../lib/billing';
+import {
   getCategories,
   getResolvedAttributes,
   getStoreAttributes,
@@ -80,6 +84,7 @@ export default async function StoreDetail({
     canManage ? getStoreKyc(id) : Promise.resolve([]),
     getStoreOrders(id),
   ]);
+  const subscription = await getSubscription(id);
 
   return (
     <div className="space-y-6">
@@ -92,6 +97,28 @@ export default async function StoreDetail({
           {store.kind === 'products' ? 'Productos' : 'Servicios'} · /
           {store.slug}
         </p>
+        {subscription && (
+          <p className="text-sm">
+            <span className="text-muted-foreground">Suscripción: </span>
+            <span className="text-foreground">
+              {subscription.planName} · {subscription.currency}{' '}
+              {subscription.priceAmount}/mes
+            </span>
+            <span className="ml-2 rounded-md bg-seller/20 px-1.5 py-0.5 align-middle text-foreground text-xs">
+              {SUBSCRIPTION_STATUS_LABEL[subscription.status]}
+            </span>
+            {subscription.periodEnd && (
+              <span className="ml-2 text-muted-foreground text-xs">
+                hasta{' '}
+                {new Date(subscription.periodEnd).toLocaleDateString('es', {
+                  day: '2-digit',
+                  month: 'short',
+                  year: 'numeric',
+                })}
+              </span>
+            )}
+          </p>
+        )}
       </div>
 
       <StoreOrders orders={orders} />

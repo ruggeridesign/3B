@@ -1,4 +1,12 @@
 export {
+  Plan,
+  PlanCode,
+  PlanList,
+  SetSubscriptionInput,
+  Subscription,
+  SubscriptionStatus,
+} from './billing';
+export {
   AddCollectionItemInput,
   AttrFilter,
   AttributeDataType,

@@ -239,6 +239,13 @@
       "when": 1793681228678,
       "tag": "0033_thankful_shiva",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793727926567,
+      "tag": "0034_crazy_silver_centurion",
+      "breakpoints": true
     }
   ]
 }

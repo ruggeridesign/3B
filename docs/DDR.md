@@ -41,8 +41,16 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
   **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
   la proyección de ranking con señales de comportamiento).
-- **En curso: M6 · Envíos y rastreo.** **M6a — solicitud + ofertas** y **M6b —
-  asignación + PIN** hechos (módulo `shipping`): el Seller solicita un envío para un
+- **En curso: M7 · Billing + panel de comunidad.** **M7a — planes + suscripciones**
+  hecho (módulo `billing`): `plans` (seller_products/services) + `subscriptions` (una
+  por tienda; nace `trial` por trigger al crear la tienda; la cambia un admin). Web:
+  estado en `mi-tienda`. **Decisiones del hito:** comisión **% por env** y **billing
+  de Movers desde M7b** (`fee_accruals`/`statements` polimórficos `store`|`mover`).
+  **Siguiente: M7b** (comisiones devengadas: venta→tienda al `completado`,
+  envío→Mover al `entregado`), luego **M7c** (estados de cuenta, pago por comprobante
+  D-03) y **M7d** (panel de comunidad: KYC + cobros + reportes + métricas).
+- **M6 · Envíos y rastreo — CERRADO.** **M6a — solicitud + ofertas** y **M6b —
+  asignación + PIN** (módulo `shipping`): el Seller solicita un envío para un
   pedido `delivery`; los Movers aprobados que operan en la comunidad ofertan →
   `ofertado` (trigger); el solicitante acepta una oferta → `asignado` + **PIN
   hasheado** (S-2) + rechazo de las demás, y el pedido pasa `listo→en_envio`.
@@ -197,7 +205,54 @@
 
 ---
 
-## 2026-11-03 · _(este commit)_ · feat — M6c.2b: rastreo en vivo — Valkey + WebSockets
+## 2026-11-03 · _(este commit)_ · feat — M7a: billing — planes + suscripciones (módulo `billing`)
+
+- **Qué:** arranca **M7 · Billing**. Módulo nuevo `billing`: tabla `plans`
+  (`seller_products`/`seller_services`, precio mensual, lectura pública) y
+  `subscriptions` (**una por tienda**). Cada tienda **nace en `trial`** (30 días) con
+  el plan según su `kind`, vía un **trigger definer**; un **admin** (de comunidad o
+  plataforma) la activa/cambia. Web: estado de la suscripción en `mi-tienda`.
+- **Por qué:** es la base de M7 (las comisiones y los estados de cuenta cuelgan de
+  acá). Decisiones del arranque: empezar por planes+suscripciones, **comisión % por
+  env** (M7b), y **billing de Movers desde M7b** → `fee_accruals`/`statements` nacerán
+  polimórficos por sujeto (`store`|`mover`).
+- **Impacto / archivos:**
+  - `packages/contracts/src/billing.ts` (+exports): `PlanCode`, `Plan`, `PlanList`,
+    `SubscriptionStatus`, `Subscription`, `SetSubscriptionInput`.
+  - `packages/db/src/schema/billing.ts` (+`index.ts`, +`reset.ts`): `plans` +
+    `subscriptions` (`unique(store_id)`). Migración `0034_crazy_silver_centurion.sql`:
+    tablas + CHECKs + RLS/grants (`plans` lectura pública; `subscriptions` la ve el
+    equipo de la tienda o un admin, la **cambia** solo un admin) + **trigger
+    `stores_trial_subscription`** (SECURITY DEFINER: billing escucha a store sin
+    acoplar store→billing). Seed: 2 planes (10/8 USD) **antes** de las tiendas.
+  - `packages/core/src/modules/billing/`: `infra/billing-repo.ts` (`listPlans`,
+    `getSubscription`, `setSubscription`), `http/routes.ts` (`GET /plans`,
+    `GET/POST /stores/{id}/subscription`), `index.ts`. `apps/api` monta
+    `billingRouter()`; `@3b/core` exporta `./modules/billing`.
+  - `apps/web`: `lib/billing.ts` (`getSubscription`), sección de suscripción en
+    `mi-tienda/[id]`.
+- **Decisiones de diseño:**
+  - **`trial` por trigger definer:** billing "escucha" el alta de tienda por trigger
+    (como la membresía de owner), sin que `store` dependa de `billing` (dirección de
+    dependencias del modelo: `… → billing`). Idempotente (`ON CONFLICT (store_id)`).
+  - **Cambios de billing = admin:** la RLS de `subscriptions` da SELECT al equipo de la
+    tienda + admins, pero UPDATE solo a admin de comunidad/plataforma (a un no-admin
+    no le afecta ninguna fila → `not_found`). `plans` es referencia pública.
+  - **Suscripción solo de tiendas:** los Movers no se suscriben (pagan comisión por
+    envío); el sujeto polimórfico aplica a `fee_accruals`/`statements` (M7b/M7c).
+- **Verificación:** `pnpm check` **verde** (lint, typecheck 10/10, unit 19/19,
+  boundaries **416 módulos**). `pnpm test:integration`: db 6/6 + **core 122/122** (+4
+  de M7a: lista planes, trial creado por trigger + lo ve el dueño, RLS tercero no ve,
+  solo admin cambia).
+- **Estado para retomar:** **M7b — comisiones devengadas** (`fee_accruals`
+  polimórfico `store`|`mover`): al `completado` de un pedido devenga comisión de venta
+  (% por env) a la tienda, y al `entregado` de un envío devenga comisión al Mover
+  (S-3), vía triggers definer; graba `orders.fee_amount`. Luego **M7c** estados de
+  cuenta (pago por comprobante, D-03) y **M7d** panel de comunidad.
+- **Relacionado:** ROADMAP M7, `data-model.md` §2.5 (billing), §6 (orden de
+  dependencias); entrada de M6.
+
+## 2026-11-03 · `185bb91` · feat — M6c.2b: rastreo en vivo — Valkey + WebSockets
 
 - **Qué:** push en vivo del rastreo (cierra M6c). Cada ping que postea el Mover se
   **publica a Valkey** (canal `shipment:<id>:ping` + índice **GEO** `shipments:geo`)

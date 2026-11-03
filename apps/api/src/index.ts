@@ -7,6 +7,7 @@ import {
   dbErrorResponse,
 } from '@3b/core/http';
 import { adminRouter, IMPERSONATE_COOKIE } from '@3b/core/modules/admin';
+import { billingRouter } from '@3b/core/modules/billing';
 import {
   catalogRouter,
   discoveryRouter,
@@ -144,6 +145,7 @@ app.route('/v1', paymentsRouter());
 app.route('/v1', messagingRouter());
 app.route('/v1', socialRouter());
 app.route('/v1', shippingRouter());
+app.route('/v1', billingRouter());
 app.route(
   '/v1',
   trackingRouter({ onPing: (id, ping) => void live.publishPing(id, ping) }),

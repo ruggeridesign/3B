@@ -146,6 +146,26 @@ async function main() {
     ])
     .onConflictDoNothing();
 
+  // Planes de suscripción (billing, M7a). Van ANTES de las tiendas: el trigger
+  // `stores_trial_subscription` les da una suscripción `trial` al crearlas.
+  await db
+    .insert(schema.plans)
+    .values([
+      {
+        code: 'seller_products',
+        name: 'Tienda de productos',
+        priceAmount: '10.00',
+        currency: 'USD',
+      },
+      {
+        code: 'seller_services',
+        name: 'Tienda de servicios',
+        priceAmount: '8.00',
+        currency: 'USD',
+      },
+    ])
+    .onConflictDoNothing();
+
   await db
     .insert(schema.stores)
     .values([
