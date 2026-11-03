@@ -26,6 +26,7 @@ import { shippingRouter } from '@3b/core/modules/shipping';
 import { socialRouter } from '@3b/core/modules/social';
 import { storeRouter } from '@3b/core/modules/store';
 import { systemRouter } from '@3b/core/modules/system';
+import { trackingRouter } from '@3b/core/modules/tracking';
 import { createAppDb, sql, withAppContext } from '@3b/db';
 import { serve } from '@hono/node-server';
 import { OpenAPIHono } from '@hono/zod-openapi';
@@ -137,6 +138,7 @@ app.route('/v1', paymentsRouter());
 app.route('/v1', messagingRouter());
 app.route('/v1', socialRouter());
 app.route('/v1', shippingRouter());
+app.route('/v1', trackingRouter());
 
 // Documento OpenAPI (contrato de la API).
 app.doc('/openapi.json', {

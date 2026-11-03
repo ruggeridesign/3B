@@ -1,4 +1,4 @@
-import type { Shipment } from '@3b/contracts';
+import type { Shipment, ShipmentTrack } from '@3b/contracts';
 import { cookies } from 'next/headers';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787';
@@ -52,6 +52,24 @@ export async function getOpenShipments(): Promise<Shipment[]> {
     return data.shipments;
   } catch {
     return [];
+  }
+}
+
+/** Rastreo de un envío (última posición + recorrido). null si no hay o falla. */
+export async function getShipmentTrack(
+  shipmentId: string,
+): Promise<ShipmentTrack | null> {
+  const cookie = await cookieHeader();
+  if (!cookie) return null;
+  try {
+    const res = await fetch(`${API}/v1/shipments/${shipmentId}/track`, {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as ShipmentTrack;
+  } catch {
+    return null;
   }
 }
 

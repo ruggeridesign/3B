@@ -1,6 +1,6 @@
 'use client';
 
-import type { Shipment, ShipmentAssignment } from '@3b/contracts';
+import type { LocationPing, Shipment, ShipmentAssignment } from '@3b/contracts';
 import { Button } from '@3b/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -29,12 +29,14 @@ export function ShipmentPanel({
   orderStatus,
   shipment,
   isSeller,
+  latestPing,
 }: {
   orderId: string;
   fulfillment: string;
   orderStatus: string;
   shipment: Shipment | null;
   isSeller: boolean;
+  latestPing?: LocationPing | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -121,6 +123,16 @@ export function ShipmentPanel({
         <p className="text-foreground text-sm">
           Asignado a {assigned.moverName ?? 'un Mover'} · USD{' '}
           {shipment.agreedPrice ?? assigned.price}
+        </p>
+      )}
+
+      {latestPing && (
+        <p className="text-muted-foreground text-sm">
+          📍 Mover en {latestPing.lat.toFixed(5)}, {latestPing.lng.toFixed(5)} ·{' '}
+          {new Date(latestPing.recordedAt).toLocaleTimeString('es', {
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
         </p>
       )}
 

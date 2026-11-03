@@ -55,6 +55,46 @@ export function MoverTrip({ trips }: { trips: Shipment[] }) {
     setError(data?.error ?? 'No se pudo avanzar el viaje.');
   }
 
+  function share(id: string) {
+    setError(null);
+    if (!navigator.geolocation) {
+      setError('Tu dispositivo no comparte ubicación.');
+      return;
+    }
+    setBusy(`geo-${id}`);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const res = await fetch(`/v1/shipments/${id}/pings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            ...(pos.coords.speed != null && pos.coords.speed >= 0
+              ? { speed: pos.coords.speed }
+              : {}),
+            ...(pos.coords.heading != null
+              ? { heading: Math.round(pos.coords.heading) }
+              : {}),
+          }),
+        });
+        setBusy(null);
+        if (res.ok) {
+          router.refresh();
+          return;
+        }
+        const data = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setError(data?.error ?? 'No se pudo compartir la ubicación.');
+      },
+      () => {
+        setBusy(null);
+        setError('No se pudo obtener tu ubicación.');
+      },
+    );
+  }
+
   async function deliver(e: React.FormEvent<HTMLFormElement>, id: string) {
     e.preventDefault();
     setError(null);
@@ -101,15 +141,25 @@ export function MoverTrip({ trips }: { trips: Shipment[] }) {
                 )}
               </div>
 
-              {next && (
+              <div className="flex flex-wrap gap-2">
+                {next && (
+                  <Button
+                    size="sm"
+                    disabled={busy === s.id}
+                    onClick={() => progress(s.id, next.to)}
+                  >
+                    {busy === s.id ? 'Guardando…' : next.label}
+                  </Button>
+                )}
                 <Button
                   size="sm"
-                  disabled={busy === s.id}
-                  onClick={() => progress(s.id, next.to)}
+                  variant="outline"
+                  disabled={busy === `geo-${s.id}`}
+                  onClick={() => share(s.id)}
                 >
-                  {busy === s.id ? 'Guardando…' : next.label}
+                  {busy === `geo-${s.id}` ? 'Enviando…' : 'Compartir ubicación'}
                 </Button>
-              )}
+              </div>
 
               {s.status === 'en_transito' && (
                 <form

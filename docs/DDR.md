@@ -51,10 +51,13 @@
   entrega validando el PIN (S-3) → envío `entregado`, que **consume el stock
   reservado** (venta real, trigger definer) y mueve el pedido `en_envio→entregado`; el
   comprador confirma → `completado`. **Cierra la salida de M6 y el lazo de inventario
-  (`consume`) de M5b.** Web: panel de envío en la ficha de pedido + cola + "Mis
-  viajes" (avanzar/entregar) en `/mover`. **Siguiente: M6c.2** — rastreo en vivo
-  (`tracking.location_pings` particionada + `geography` + GEO/WebSockets). Difieren:
-  vencer ofertas S-1 (worker), cancelar/fallido S-4, auto-cierre 48h, KYC de Movers.
+  (`consume`) de M5b.** **M6c.2a — rastreo (pings):** módulo nuevo `tracking`; el
+  Mover postea pings de posición (`location_pings` particionada + `geography`/GIST) y
+  el comprador ve la última posición. Web: panel de envío en la ficha de pedido +
+  cola/"Mis viajes" en `/mover` (avanzar/entregar/compartir ubicación). **Siguiente:
+  M6c.2b** — push en vivo (Valkey pub/sub + GEO + **WebSockets** en `@3b/api`).
+  Difieren: vencer ofertas S-1 (worker), cancelar/fallido S-4, auto-cierre 48h, KYC de
+  Movers.
 - **M5 · Pedido end-to-end — CERRADO (features + infra).** Rebanadas: **M5a**
   carrito, **M5b** estados + reserva, **M5c** pago por comprobante **+ M5c.2 captura**,
   **M5d.1** chat, **M5d.2** reseñas, **M5d.3** preguntas, **M5d.4** reportes, e
@@ -192,7 +195,53 @@
 
 ---
 
-## 2026-11-03 · _(este commit)_ · feat — M6c.1: envíos — entrega con PIN + consume de stock (`shipping`)
+## 2026-11-03 · _(este commit)_ · feat — M6c.2a: rastreo — pings de posición (módulo `tracking`)
+
+- **Qué:** rastreo en vivo (parte 1). Módulo nuevo `tracking`: el **Mover asignado
+  postea pings** de posición durante un viaje activo; el comprador/tienda (quien ve
+  el envío) lee la **última posición** y el **recorrido**. Tabla
+  `tracking.location_pings` (**particionada por mes**, D-08) con `geography(Point)`
+  (PostGIS) + índice **GIST**. La publicación a Valkey + **WebSockets** (push en
+  vivo) va en M6c.2b.
+- **Por qué:** avanza el "posición en vivo" de M6; deja el ledger de posiciones y la
+  lectura/escritura con su RLS, listo para el push en vivo.
+- **Impacto / archivos:**
+  - `packages/contracts/src/tracking.ts` (+exports): `LocationPing`, `PostPingInput`,
+    `ShipmentTrack`.
+  - `packages/db/src/schema/tracking.ts` (+`index.ts`, +`reset.ts`): `location_pings`
+    (tipo custom `geography(Point,4326)`). Migración `0033_thankful_shiva.sql`: DDL
+    **particionada a mano** (RANGE por `recorded_at`: meses 2026-11/12, 2027-01 +
+    DEFAULT), índice **GIST** sobre `point`, RLS/grants (append-only; SELECT = quien
+    ve el envío; INSERT = el Mover asignado).
+  - `packages/core/src/modules/tracking/`: `infra/ping-repo.ts` (`postPing` —SQL crudo
+    `ST_MakePoint`—, `latestPing`, `recentTrack` —`ST_X`/`ST_Y`—), `http/routes.ts`
+    (`POST /shipments/{id}/pings`, `GET /shipments/{id}/track`; hook `onPing` opcional
+    para el publisher de M6c.2b). `apps/api` monta `trackingRouter()`; `@3b/core`
+    exporta `./modules/tracking`.
+  - `apps/web`: `lib/shipping.ts` (`getShipmentTrack`), `_components/mover-trip.tsx`
+    (botón "Compartir ubicación" con `navigator.geolocation`),
+    `_components/shipment-panel.tsx` (muestra la última posición al comprador).
+- **Decisiones de diseño:**
+  - **`geography` + particionado a mano:** Drizzle no modela ninguno; se usa un tipo
+    custom para el `point` y la DDL particionada/GIST va a mano (como `messages`). La
+    app inserta/lee el punto por **SQL crudo** (`ST_MakePoint`/`ST_X`/`ST_Y`).
+  - **RLS derivada del envío:** el ping se ve si el envío padre es visible; lo escribe
+    solo el **Mover asignado** (`mover_id = me`). Append-only (SELECT/INSERT).
+  - **`onPing` inyectable:** el router expone un hook para publicar a Valkey sin
+    acoplar tracking→Valkey; lo cablea `apps/api` en M6c.2b (best-effort, no tumba el
+    request).
+- **Verificación:** `pnpm check` **verde** (lint, typecheck 10/10, unit 19/19,
+  boundaries **407 módulos**). `pnpm test:integration`: db 6/6 + **core 118/118** (+2
+  de M6c.2a: el Mover postea y el comprador ve (round-trip de lat/lng por PostGIS);
+  RLS: no-Mover no postea / tercero no ve el rastreo).
+- **Estado para retomar:** **M6c.2b — push en vivo**: publicar cada ping a **Valkey**
+  (pub/sub por envío + GEOADD) desde `apps/api` (cliente Valkey + `onPing`) y un
+  endpoint **WebSocket** que transmita los pings al comprador en vivo. Luego: vencer
+  ofertas (S-1, worker), cancelar/fallido (S-4), auto-cierre 48h, KYC de Movers.
+- **Relacionado:** ROADMAP M6 (infra WebSockets/GEO), `data-model.md` §2.5
+  (location_pings), D-08; entrada de M6c.1.
+
+## 2026-11-03 · `1b4f84f` · feat — M6c.1: envíos — entrega con PIN + consume de stock (`shipping`)
 
 - **Qué:** tercera rebanada de **M6** (cierra la _salida_ de M6: "entregado con PIN").
   El **Mover asignado avanza el viaje** (`asignado → hacia_retiro → retirado →

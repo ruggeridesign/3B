@@ -232,6 +232,13 @@
       "when": 1793680760602,
       "tag": "0032_certain_major_mapleleaf",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1793681228678,
+      "tag": "0033_thankful_shiva",
+      "breakpoints": true
     }
   ]
 }

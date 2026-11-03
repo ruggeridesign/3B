@@ -10,7 +10,10 @@ import {
   type OrderAction,
   orderActions,
 } from '../../../../../lib/orders';
-import { getOrderShipment } from '../../../../../lib/shipping';
+import {
+  getOrderShipment,
+  getShipmentTrack,
+} from '../../../../../lib/shipping';
 import { getOrderReviews } from '../../../../../lib/social';
 import { OrderActions } from '../../../../_components/order-actions';
 import { OrderChat } from '../../../../_components/order-chat';
@@ -61,6 +64,14 @@ export default async function PedidoDetalle({
   const thread = await getOrderThread(id);
   const reviews = await getOrderReviews(id);
   const shipment = await getOrderShipment(id);
+  // Rastreo solo mientras el envío está en curso.
+  const track =
+    shipment &&
+    ['asignado', 'hacia_retiro', 'retirado', 'en_transito'].includes(
+      shipment.status,
+    )
+      ? await getShipmentTrack(shipment.id)
+      : null;
 
   // URLs de las capturas de pago (visibles para ambas partes por la policy
   // media→pedido, M5c.2). Se resuelven acá para no exponer el id crudo.
@@ -158,6 +169,7 @@ export default async function PedidoDetalle({
         orderStatus={o.status}
         shipment={shipment}
         isSeller={isSeller}
+        latestPing={track?.latest ?? null}
       />
 
       <ReviewForm orderId={o.id} review={myReview} canReview={canReview} />

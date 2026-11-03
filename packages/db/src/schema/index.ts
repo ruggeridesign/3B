@@ -10,3 +10,4 @@ export * from './platform';
 export * from './shipping';
 export * from './social';
 export * from './store';
+export * from './tracking';
