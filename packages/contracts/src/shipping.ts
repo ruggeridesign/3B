@@ -102,3 +102,19 @@ export const ShipmentAssignment = z.object({
   pin: z.string(),
 });
 export type ShipmentAssignment = z.infer<typeof ShipmentAssignment>;
+
+/**
+ * El Mover avanza el viaje (M6c): `asignado → hacia_retiro → retirado →
+ * en_transito`. La entrega (`en_transito → entregado`) va por su propio endpoint
+ * (valida el PIN, S-3).
+ */
+export const ProgressShipmentInput = z.object({
+  toStatus: z.enum(['hacia_retiro', 'retirado', 'en_transito']),
+});
+export type ProgressShipmentInput = z.infer<typeof ProgressShipmentInput>;
+
+/** Entrega: el Mover valida el **PIN** del receptor (S-3). */
+export const DeliverShipmentInput = z.object({
+  pin: z.string().regex(/^\d{4,10}$/),
+});
+export type DeliverShipmentInput = z.infer<typeof DeliverShipmentInput>;

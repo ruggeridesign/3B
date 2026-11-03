@@ -10,12 +10,14 @@ import { getOrder } from '../../orders';
 import {
   acceptOffer,
   createShipment,
+  deliverShipment,
   getShipment,
   getShipmentByOrder,
   listMoverShipments,
   listOpenShipments,
   listShipmentOffers,
   makeOffer,
+  progressShipment,
 } from '../infra/shipping-repo';
 
 const money = z.string().regex(/^\d{1,10}(\.\d{1,2})?$/);
@@ -87,6 +89,14 @@ const createOfferBody = z
     etaMin: z.number().int().positive().max(1440),
   })
   .openapi('CreateOffer');
+
+const progressBody = z
+  .object({ toStatus: z.enum(['hacia_retiro', 'retirado', 'en_transito']) })
+  .openapi('ProgressShipment');
+
+const deliverBody = z
+  .object({ pin: z.string().regex(/^\d{4,10}$/) })
+  .openapi('DeliverShipment');
 
 const errorSchema = z.object({ error: z.string() }).openapi('ShippingError');
 
@@ -413,6 +423,116 @@ export function shippingRouter() {
         );
       }
       return c.json({ shipment: res.shipment, pin: res.pin }, 200);
+    },
+  );
+
+  // Avanzar el viaje (Mover asignado): hacia_retiro / retirado / en_transito.
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/shipments/{id}/progress',
+      tags: ['shipping'],
+      summary: 'Avanzar el viaje',
+      request: {
+        params: idParam,
+        body: { content: { 'application/json': { schema: progressBody } } },
+      },
+      responses: {
+        200: {
+          description: 'Viaje avanzado',
+          content: { 'application/json': { schema: shipmentOut } },
+        },
+        400: {
+          description: 'Transición de viaje inválida',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No sos el Mover asignado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'El envío no existe o no es visible',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db, userId } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      const { toStatus } = c.req.valid('json');
+      const res = await progressShipment(db, id, userId, toStatus);
+      if (res.status === 'not_found') {
+        return c.json({ error: 'No encontrado.' }, 404);
+      }
+      if (res.status === 'not_assigned') {
+        return c.json({ error: 'No sos el Mover asignado.' }, 403);
+      }
+      if (res.status === 'invalid' || res.status === 'pin_mismatch') {
+        return c.json(
+          { error: 'No podés avanzar el viaje a ese estado.' },
+          400,
+        );
+      }
+      return c.json(res.shipment, 200);
+    },
+  );
+
+  // Entregar: el Mover valida el PIN del receptor (S-3).
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/shipments/{id}/deliver',
+      tags: ['shipping'],
+      summary: 'Entregar (validar PIN)',
+      request: {
+        params: idParam,
+        body: { content: { 'application/json': { schema: deliverBody } } },
+      },
+      responses: {
+        200: {
+          description: 'Entregado',
+          content: { 'application/json': { schema: shipmentOut } },
+        },
+        400: {
+          description: 'El envío no está en tránsito o el PIN es incorrecto',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No sos el Mover asignado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'El envío no existe o no es visible',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db, userId } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      const { pin } = c.req.valid('json');
+      const res = await deliverShipment(db, id, userId, pin);
+      if (res.status === 'not_found') {
+        return c.json({ error: 'No encontrado.' }, 404);
+      }
+      if (res.status === 'not_assigned') {
+        return c.json({ error: 'No sos el Mover asignado.' }, 403);
+      }
+      if (res.status === 'invalid') {
+        return c.json({ error: 'El envío no está en tránsito.' }, 400);
+      }
+      if (res.status === 'pin_mismatch') {
+        return c.json({ error: 'PIN incorrecto.' }, 400);
+      }
+      return c.json(res.shipment, 200);
     },
   );
 

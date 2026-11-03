@@ -6,6 +6,7 @@ export {
   acceptOffer,
   type CreateShipmentResult,
   createShipment,
+  deliverShipment,
   getShipment,
   getShipmentByOrder,
   listMoverShipments,
@@ -13,4 +14,6 @@ export {
   listShipmentOffers,
   type MakeOfferResult,
   makeOffer,
+  progressShipment,
+  type TripResult,
 } from './infra/shipping-repo';

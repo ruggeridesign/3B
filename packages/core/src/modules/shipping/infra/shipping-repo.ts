@@ -335,3 +335,98 @@ export async function acceptOffer(
   const full = await getShipment(db, shipmentId);
   return { status: 'ok', shipment: full as Shipment, pin };
 }
+
+/** Próximo estado válido del viaje (progreso del Mover, sin la entrega). */
+const NEXT_PROGRESS: Partial<Record<Shipment['status'], Shipment['status']>> = {
+  asignado: 'hacia_retiro',
+  hacia_retiro: 'retirado',
+  retirado: 'en_transito',
+};
+
+/** Resultado de avanzar/entregar un viaje (para mapear a HTTP sin 500). */
+export type TripResult =
+  | { status: 'ok'; shipment: Shipment }
+  | { status: 'not_found' }
+  | { status: 'not_assigned' }
+  | { status: 'invalid' }
+  | { status: 'pin_mismatch' };
+
+/**
+ * El **Mover asignado** avanza el viaje (`asignado → hacia_retiro → retirado →
+ * en_transito`). Valida la arista y que el envío sea suyo; la RLS (mover_id = me)
+ * es el candado. La entrega va aparte (`deliverShipment`, valida PIN).
+ */
+export async function progressShipment(
+  db: AppTransaction,
+  shipmentId: string,
+  moverId: string,
+  toStatus: Shipment['status'],
+): Promise<TripResult> {
+  const [ship] = await db
+    .select({
+      id: schema.shipments.id,
+      status: schema.shipments.status,
+      moverId: schema.shipments.moverId,
+    })
+    .from(schema.shipments)
+    .where(eq(schema.shipments.id, shipmentId))
+    .limit(1);
+  if (!ship) return { status: 'not_found' };
+  if (ship.moverId !== moverId) return { status: 'not_assigned' };
+  if (NEXT_PROGRESS[ship.status as Shipment['status']] !== toStatus) {
+    return { status: 'invalid' };
+  }
+
+  await db
+    .update(schema.shipments)
+    .set({ status: toStatus, updatedAt: new Date() })
+    .where(eq(schema.shipments.id, shipmentId));
+  const full = await getShipment(db, shipmentId);
+  return { status: 'ok', shipment: full as Shipment };
+}
+
+/**
+ * **Entrega con PIN** (S-3): el Mover valida el PIN del receptor; si coincide con el
+ * hash (`crypt`), el envío pasa a `entregado` (lo que dispara el trigger de entrega:
+ * **consume** el stock reservado y mueve el pedido `en_envio→entregado`). Exige el
+ * envío `en_transito` y asignado a este Mover. La RLS acota el UPDATE al Mover.
+ */
+export async function deliverShipment(
+  db: AppTransaction,
+  shipmentId: string,
+  moverId: string,
+  pin: string,
+): Promise<TripResult> {
+  const [ship] = await db
+    .select({
+      id: schema.shipments.id,
+      status: schema.shipments.status,
+      moverId: schema.shipments.moverId,
+    })
+    .from(schema.shipments)
+    .where(eq(schema.shipments.id, shipmentId))
+    .limit(1);
+  if (!ship) return { status: 'not_found' };
+  if (ship.moverId !== moverId) return { status: 'not_assigned' };
+  if (ship.status !== 'en_transito') return { status: 'invalid' };
+
+  const [chk] = await db
+    .select({
+      ok: sql<boolean>`${schema.shipments.pinHash} = crypt(${pin}, ${schema.shipments.pinHash})`,
+    })
+    .from(schema.shipments)
+    .where(eq(schema.shipments.id, shipmentId))
+    .limit(1);
+  if (!chk?.ok) return { status: 'pin_mismatch' };
+
+  await db
+    .update(schema.shipments)
+    .set({
+      status: 'entregado',
+      deliveredAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.shipments.id, shipmentId));
+  const full = await getShipment(db, shipmentId);
+  return { status: 'ok', shipment: full as Shipment };
+}

@@ -146,8 +146,8 @@ export const ORDER_TRANSITIONS: readonly OrderTransition[] = [
   { from: 'listo', to: 'retirado', by: 'seller' }, // retiro en tienda
   { from: 'retirado', to: 'completado', by: 'maker' }, // el comprador confirma (M5d)
   { from: 'listo', to: 'en_envio', by: 'system' }, // Mover asignado (M6)
-  { from: 'en_envio', to: 'entregado', by: 'system' }, // valida PIN (M6)
-  { from: 'entregado', to: 'completado', by: 'system' }, // 48h sin disputa
+  { from: 'en_envio', to: 'entregado', by: 'system' }, // valida PIN (M6c, trigger)
+  { from: 'entregado', to: 'completado', by: 'maker' }, // el comprador confirma (M6c)
   { from: 'entregado', to: 'en_disputa', by: 'maker' },
 ];
 

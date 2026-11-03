@@ -116,7 +116,9 @@ export {
 export {
   CreateOfferInput,
   CreateShipmentInput,
+  DeliverShipmentInput,
   OfferStatus,
+  ProgressShipmentInput,
   Shipment,
   ShipmentAssignment,
   ShipmentList,

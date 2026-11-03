@@ -225,6 +225,13 @@
       "when": 1793677452499,
       "tag": "0031_demonic_polaris",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1793680760602,
+      "tag": "0032_certain_major_mapleleaf",
+      "breakpoints": true
     }
   ]
 }

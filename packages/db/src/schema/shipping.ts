@@ -54,6 +54,7 @@ export const shipments = shipping.table(
     proofMediaId: uuid('proof_media_id').references(() => mediaFiles.id, {
       onDelete: 'set null',
     }),
+    deliveredAt: timestamp('delivered_at', { withTimezone: true }),
     ...timestamps,
   },
   (t) => [

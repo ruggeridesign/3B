@@ -47,11 +47,14 @@
   `ofertado` (trigger); el solicitante acepta una oferta → `asignado` + **PIN
   hasheado** (S-2) + rechazo de las demás, y el pedido pasa `listo→en_envio`.
   `mover_profiles` enriquecido con `operating_communities` (Pedro opera en Coro +
-  Punto Fijo). Web: panel de envío en la ficha de pedido (solicitar/aceptar/PIN) +
-  cola + "Mis viajes" en `/mover`. **Siguiente: M6c** (rastreo `location_pings` +
-  GEO/WebSockets + entrega con PIN S-3 → pedido `entregado→completado` **y el
-  `consume` real de stock**). Difieren: geo (`geography`), vencer ofertas S-1
-  (worker), cancelar/fallido S-4, KYC de Movers.
+  Punto Fijo). **M6c.1 — entrega con PIN + consume:** el Mover avanza el viaje y
+  entrega validando el PIN (S-3) → envío `entregado`, que **consume el stock
+  reservado** (venta real, trigger definer) y mueve el pedido `en_envio→entregado`; el
+  comprador confirma → `completado`. **Cierra la salida de M6 y el lazo de inventario
+  (`consume`) de M5b.** Web: panel de envío en la ficha de pedido + cola + "Mis
+  viajes" (avanzar/entregar) en `/mover`. **Siguiente: M6c.2** — rastreo en vivo
+  (`tracking.location_pings` particionada + `geography` + GEO/WebSockets). Difieren:
+  vencer ofertas S-1 (worker), cancelar/fallido S-4, auto-cierre 48h, KYC de Movers.
 - **M5 · Pedido end-to-end — CERRADO (features + infra).** Rebanadas: **M5a**
   carrito, **M5b** estados + reserva, **M5c** pago por comprobante **+ M5c.2 captura**,
   **M5d.1** chat, **M5d.2** reseñas, **M5d.3** preguntas, **M5d.4** reportes, e
@@ -189,7 +192,58 @@
 
 ---
 
-## 2026-11-03 · _(este commit)_ · feat — M6b: envíos — asignación + PIN (`shipping`)
+## 2026-11-03 · _(este commit)_ · feat — M6c.1: envíos — entrega con PIN + consume de stock (`shipping`)
+
+- **Qué:** tercera rebanada de **M6** (cierra la _salida_ de M6: "entregado con PIN").
+  El **Mover asignado avanza el viaje** (`asignado → hacia_retiro → retirado →
+  en_transito`) y **entrega validando el PIN** del receptor (S-3): si coincide con el
+  hash (`crypt`), el envío pasa a `entregado`, lo que **consume el stock reservado**
+  (venta real: `reserved`→0 y `on_hand`−qty) y mueve el pedido `en_envio→entregado`.
+  El comprador **confirma** → `completado` (habilita reseñas). Cierra el lazo de
+  inventario (`consume`) que arrastraba desde M5b.
+- **Por qué:** cumple la _salida_ de M6 y descuenta el stock real al entregar
+  (O-3/I-1), lo último que faltaba del flujo de pedido end-to-end.
+- **Impacto / archivos:**
+  - `packages/contracts/src/shipping.ts` (+exports): `ProgressShipmentInput`,
+    `DeliverShipmentInput`. `orders.ts`: la arista `entregado → completado` pasa a
+    `by: 'maker'` (el comprador confirma; el auto-cierre a 48h queda para el worker).
+  - `packages/db/src/schema/shipping.ts` (+`delivered_at`). Migración
+    `0032_certain_major_mapleleaf.sql`: columna + **policy `shipments_update`
+    ampliada** (suma el Mover asignado) + **trigger `tg_shipment_delivered`**
+    (SECURITY DEFINER: al `entregado`, consume reservas → `consumed` + movimiento
+    `sale` que descuenta `on_hand`, y mueve el pedido `en_envio→entregado` con su
+    evento; es acción de sistema que cruza shipping→inventory→orders).
+  - `packages/core/src/modules/shipping/`: `infra/shipping-repo.ts`
+    (`progressShipment`, `deliverShipment` —valida PIN con `crypt`—), rutas
+    `POST /shipments/{id}/progress` y `/deliver`.
+  - `apps/web`: `_components/mover-trip.tsx` (avanzar viaje + entregar con PIN),
+    cableado en `/mover` ("Mis viajes"). El comprador confirma con el botón
+    "Confirmar recepción" del pedido (ya existente, M5d).
+- **Decisiones de diseño:**
+  - **El consume + la transición del pedido van en un trigger definer:** la entrega
+    la dispara el **Mover** (puede actualizar su envío por RLS), pero consumir stock y
+    mover el pedido son acciones de **sistema** que el Mover no puede hacer bajo RLS →
+    SECURITY DEFINER (mismo patrón que la proyección de reservas/movimientos y el
+    `ofertado`). Idempotente por el único `idempotency_key` del movimiento + el guard
+    de estado.
+  - **PIN validado con `crypt` (S-3):** `pin_hash = crypt(pin, pin_hash)`; nunca se
+    guarda el claro. El Mover ingresa el PIN que le da el receptor.
+  - **`entregado → completado` por el comprador:** reemplaza la arista `system` (48h)
+    para cerrar el pedido sin esperar al worker; el auto-cierre a 48h puede sumarse
+    como job del worker (la transición no gatea actor en el repo).
+- **Verificación:** `pnpm check` **verde** (lint, typecheck 10/10, unit 19/19,
+  boundaries **401 módulos**). `pnpm test:integration`: db 6/6 + **core 116/116** (+3
+  de M6c.1: entregar con PIN → consume stock (`reserved`→0, `on_hand`−2) + pedido
+  `entregado→completado`; PIN incorrecto; solo el Mover asignado avanza).
+- **Estado para retomar:** **M6c.2 — rastreo en vivo**: `tracking.location_pings`
+  (particionada por mes + `geography(Point)`), el Mover postea pings durante el viaje,
+  el comprador/tienda ve la posición; **GEO en Valkey** (pub/sub por envío) +
+  **WebSockets** en `@3b/api`. Luego: vencer ofertas (S-1, worker), cancelar/fallido
+  con motivo (S-4), auto-cierre a 48h, KYC de Movers.
+- **Relacionado:** ROADMAP M6, `data-model.md` §5 (S-3, I-1, O-3), §6; entradas de
+  M6a/M6b y M5b (reservas/consume diferido).
+
+## 2026-11-03 · `675cd9d` · feat — M6b: envíos — asignación + PIN (`shipping`)
 
 - **Qué:** segunda rebanada de **M6**. El solicitante **acepta una oferta**: el envío
   queda `asignado` con el Mover y el precio pactado, se **genera un PIN** y se guarda
