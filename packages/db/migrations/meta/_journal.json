@@ -218,6 +218,13 @@
       "when": 1793671501960,
       "tag": "0030_wooden_marten_broadcloak",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1793677452499,
+      "tag": "0031_demonic_polaris",
+      "breakpoints": true
     }
   ]
 }

@@ -155,6 +155,7 @@ export default async function PedidoDetalle({
       <ShipmentPanel
         orderId={o.id}
         fulfillment={o.fulfillment}
+        orderStatus={o.status}
         shipment={shipment}
         isSeller={isSeller}
       />

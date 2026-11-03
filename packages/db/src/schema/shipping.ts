@@ -60,6 +60,7 @@ export const shipments = shipping.table(
     index('shipments_status_idx').on(t.status),
     index('shipments_community_idx').on(t.communityId),
     index('shipments_mover_idx').on(t.moverId),
+    index('shipments_order_idx').on(t.orderId),
   ],
 );
 

@@ -118,6 +118,7 @@ export {
   CreateShipmentInput,
   OfferStatus,
   Shipment,
+  ShipmentAssignment,
   ShipmentList,
   ShipmentOffer,
   ShipmentOfferList,

@@ -41,15 +41,17 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
   **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
   la proyección de ranking con señales de comportamiento).
-- **En curso: M6 · Envíos y rastreo.** **M6a — solicitud + ofertas** hecho (módulo
-  `shipping`): el Seller solicita un envío para un pedido `delivery`; los Movers
-  aprobados que operan en la comunidad ofertan (precio + ETA) → el envío pasa a
-  `ofertado` (trigger). `mover_profiles` enriquecido con `operating_communities`
-  (Pedro opera en Coro + Punto Fijo). Web: panel de envío en la ficha de pedido +
-  cola del Mover en `/mover`. **Siguiente: M6b** (aceptar oferta → `asignado` + PIN
-  S-2 + `orders` `listo→en_envio`), luego **M6c** (rastreo + entrega con PIN + el
-  `consume` real de stock). Difieren: geo (`geography`), vencer ofertas S-1 (worker),
-  KYC de Movers.
+- **En curso: M6 · Envíos y rastreo.** **M6a — solicitud + ofertas** y **M6b —
+  asignación + PIN** hechos (módulo `shipping`): el Seller solicita un envío para un
+  pedido `delivery`; los Movers aprobados que operan en la comunidad ofertan →
+  `ofertado` (trigger); el solicitante acepta una oferta → `asignado` + **PIN
+  hasheado** (S-2) + rechazo de las demás, y el pedido pasa `listo→en_envio`.
+  `mover_profiles` enriquecido con `operating_communities` (Pedro opera en Coro +
+  Punto Fijo). Web: panel de envío en la ficha de pedido (solicitar/aceptar/PIN) +
+  cola + "Mis viajes" en `/mover`. **Siguiente: M6c** (rastreo `location_pings` +
+  GEO/WebSockets + entrega con PIN S-3 → pedido `entregado→completado` **y el
+  `consume` real de stock**). Difieren: geo (`geography`), vencer ofertas S-1
+  (worker), cancelar/fallido S-4, KYC de Movers.
 - **M5 · Pedido end-to-end — CERRADO (features + infra).** Rebanadas: **M5a**
   carrito, **M5b** estados + reserva, **M5c** pago por comprobante **+ M5c.2 captura**,
   **M5d.1** chat, **M5d.2** reseñas, **M5d.3** preguntas, **M5d.4** reportes, e
@@ -187,7 +189,56 @@
 
 ---
 
-## 2026-11-02 · _(este commit)_ · feat — M6a: envíos — solicitud + ofertas de Movers (módulo `shipping`)
+## 2026-11-03 · _(este commit)_ · feat — M6b: envíos — asignación + PIN (`shipping`)
+
+- **Qué:** segunda rebanada de **M6**. El solicitante **acepta una oferta**: el envío
+  queda `asignado` con el Mover y el precio pactado, se **genera un PIN** y se guarda
+  su **hash** (S-2, `crypt`/`gen_salt` de pgcrypto), se **rechazan** las demás ofertas
+  activas, y el pedido pasa **`listo → en_envio`** (shipping dispara la transición de
+  `orders`, como payments). El PIN se devuelve en claro **una sola vez**. El Mover ve
+  sus **viajes asignados**.
+- **Por qué:** avanza la _salida_ de M6 ("… → asignado → …"); engancha envío ↔ pedido
+  (un Mover asignado mueve el pedido a `en_envio`).
+- **Impacto / archivos:**
+  - `packages/contracts/src/shipping.ts` (+export): `ShipmentAssignment`
+    (`{ shipment, pin }`).
+  - `packages/db/src/schema/shipping.ts` (+migración `0031_demonic_polaris.sql`):
+    índice `shipments_order_idx` (ancla la migración) + **UPDATE grants + policies**
+    sobre `shipments` y `shipment_offers` (asignar/aceptar: solicitante o miembro de
+    la tienda).
+  - `packages/core/src/modules/shipping/`: `infra/shipping-repo.ts` (`acceptOffer`
+    —asigna + PIN hash + rechaza otras + transición de `orders`—, `listMoverShipments`),
+    rutas `POST /shipments/{id}/offers/{offerId}/accept` y `GET /shipments/assigned`.
+  - `apps/web`: `_components/shipment-panel.tsx` (aceptar oferta + mostrar PIN una vez
+    + Mover asignado; solo con el pedido `listo`), `lib/shipping.ts`
+    (`getAssignedShipments`), `/mover` (sección "Mis viajes").
+- **Decisiones de diseño:**
+  - **PIN hasheado (S-2), visible una vez:** se guarda `crypt(pin, gen_salt('bf'))`
+    para validar en la entrega (M6c); el claro se devuelve solo en la respuesta de
+    aceptar (quien acepta lo comparte con el receptor). La entrega del PIN al
+    comprador por notificación queda para cuando exista ese canal.
+  - **Asignar exige el pedido `listo`:** `en_envio` = "Mover asignado" (§6); si el
+    pedido no está `listo`, se rechaza con `order_not_ready`. La transición la dispara
+    `shipping` vía `transitionOrder` (arista `system` del grafo; el repo no gatea
+    actor, la RLS sí: el solicitante es miembro de la tienda).
+  - **Rechazo de las demás ofertas en la app, bajo RLS:** `app` suma UPDATE sobre
+    shipments/offers con policy (solicitante/tienda); se acepta una y se marcan
+    `rejected` las que seguían `active`.
+- **Verificación:** `pnpm check` **verde** (lint, typecheck 10/10, unit 19/19,
+  boundaries **399 módulos**). `pnpm test:integration`: db 6/6 + **core 113/113** (+2
+  de M6b: aceptar → `asignado`+PIN+pedido `en_envio`+rechazo de otras; no asignar si el
+  pedido no está `listo`). El test agrega un 2º Mover (Marta) vía owner para el
+  rechazo.
+- **Estado para retomar:** **M6c — rastreo + entrega con PIN**: progreso del viaje
+  (`hacia_retiro`/`retirado`/`en_transito` por el Mover), `tracking.location_pings`
+  (particionada + GEO en Valkey + WebSockets), y **entrega con PIN** (S-3) → envío
+  `entregado` + pedido `entregado → completado` **y el `consume` real de `on_hand`**.
+  También: vencer ofertas (S-1, worker), cancelar/fallido con motivo (S-4), KYC de
+  Movers.
+- **Relacionado:** ROADMAP M6, `data-model.md` §5 (S-2/S-3), §6 (máquina de envío);
+  entrada de M6a.
+
+## 2026-11-02 · `a9c2687` · feat — M6a: envíos — solicitud + ofertas de Movers (módulo `shipping`)
 
 - **Qué:** arranca **M6 · Envíos**. Módulo nuevo `shipping`: el Seller **solicita un
   envío** para un pedido `delivery` (nace `solicitado`); los **Movers aprobados que

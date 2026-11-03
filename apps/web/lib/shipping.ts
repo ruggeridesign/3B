@@ -54,3 +54,20 @@ export async function getOpenShipments(): Promise<Shipment[]> {
     return [];
   }
 }
+
+/** Mis viajes (envíos asignados al Mover). [] si no hay sesión o falla. */
+export async function getAssignedShipments(): Promise<Shipment[]> {
+  const cookie = await cookieHeader();
+  if (!cookie) return [];
+  try {
+    const res = await fetch(`${API}/v1/shipments/assigned`, {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { shipments: Shipment[] };
+    return data.shipments;
+  } catch {
+    return [];
+  }
+}

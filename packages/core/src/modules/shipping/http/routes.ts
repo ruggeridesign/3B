@@ -8,9 +8,11 @@ import {
 } from '../../../http';
 import { getOrder } from '../../orders';
 import {
+  acceptOffer,
   createShipment,
   getShipment,
   getShipmentByOrder,
+  listMoverShipments,
   listOpenShipments,
   listShipmentOffers,
   makeOffer,
@@ -68,6 +70,9 @@ const shipmentListOut = z
 const offerListOut = z
   .object({ offers: z.array(offerOut) })
   .openapi('ShipmentOfferList');
+const assignmentOut = z
+  .object({ shipment: shipmentOut, pin: z.string() })
+  .openapi('ShipmentAssignment');
 
 const createShipmentBody = z
   .object({
@@ -88,11 +93,16 @@ const errorSchema = z.object({ error: z.string() }).openapi('ShippingError');
 const idParam = z.object({
   id: z.string().openapi({ param: { name: 'id', in: 'path' } }),
 });
+const acceptParam = z.object({
+  id: z.string().openapi({ param: { name: 'id', in: 'path' } }),
+  offerId: z.string().openapi({ param: { name: 'offerId', in: 'path' } }),
+});
 
 /**
- * Router del módulo shipping (M6a). El Seller solicita un envío para un pedido
+ * Router del módulo shipping (M6a/M6b). El Seller solicita un envío para un pedido
  * `delivery`; los Movers aprobados que operan en la comunidad ofertan (lo que mueve
- * el envío a `ofertado`). La RLS es el candado; la asignación + PIN llega en M6b.
+ * el envío a `ofertado`); el solicitante **acepta** una oferta → `asignado` + PIN y
+ * el pedido pasa `listo→en_envio`. La RLS es el candado; el rastreo + entrega (M6c).
  */
 export function shippingRouter() {
   const app = new OpenAPIHono<{ Variables: ApiVariables }>();
@@ -182,6 +192,31 @@ export function shippingRouter() {
     async (c) => {
       const { db } = sessionCtx(c);
       const shipments = await listOpenShipments(db);
+      return c.json({ shipments }, 200);
+    },
+  );
+
+  // Envíos asignados al Mover (sus viajes).
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/shipments/assigned',
+      tags: ['shipping'],
+      summary: 'Mis viajes (Mover asignado)',
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: shipmentListOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db, userId } = sessionCtx(c);
+      const shipments = await listMoverShipments(db, userId);
       return c.json({ shipments }, 200);
     },
   );
@@ -307,6 +342,77 @@ export function shippingRouter() {
         return c.json({ error: 'Ya ofertaste sobre este envío.' }, 409);
       }
       return c.json(res.offer, 201);
+    },
+  );
+
+  // Aceptar una oferta → asignar el Mover + PIN (solicitante o tienda).
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/shipments/{id}/offers/{offerId}/accept',
+      tags: ['shipping'],
+      summary: 'Aceptar una oferta (asignar)',
+      request: { params: acceptParam },
+      responses: {
+        200: {
+          description: 'Oferta aceptada (envío asignado + PIN)',
+          content: { 'application/json': { schema: assignmentOut } },
+        },
+        400: {
+          description:
+            'El envío ya no admite asignación o el pedido no está listo',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No podés asignar este envío',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'El envío o la oferta no existe',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db, userId } = sessionCtx(c);
+      const { id, offerId } = c.req.valid('param');
+
+      const shipment = await getShipment(db, id);
+      if (!shipment) return c.json({ error: 'No encontrado.' }, 404);
+      const canAssign =
+        shipment.requesterId === userId ||
+        (shipment.storeId !== null &&
+          (await isStoreMember(db, shipment.storeId)));
+      if (!canAssign) {
+        return c.json({ error: 'No podés asignar este envío.' }, 403);
+      }
+
+      const res = await acceptOffer(db, id, offerId, userId);
+      if (res.status === 'shipment_not_found') {
+        return c.json({ error: 'No encontrado.' }, 404);
+      }
+      if (res.status === 'offer_not_found') {
+        return c.json(
+          { error: 'La oferta no existe o ya no está activa.' },
+          404,
+        );
+      }
+      if (res.status === 'not_open') {
+        return c.json({ error: 'El envío ya no admite asignación.' }, 400);
+      }
+      if (res.status === 'order_not_ready') {
+        return c.json(
+          {
+            error: `El pedido está en "${res.current}"; marcalo listo antes de asignar.`,
+          },
+          400,
+        );
+      }
+      return c.json({ shipment: res.shipment, pin: res.pin }, 200);
     },
   );
 

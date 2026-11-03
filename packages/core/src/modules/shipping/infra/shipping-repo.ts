@@ -1,11 +1,12 @@
+import { randomInt } from 'node:crypto';
 import type {
   CreateOfferInput,
   CreateShipmentInput,
   Shipment,
   ShipmentOffer,
 } from '@3b/contracts';
-import { type AppTransaction, and, desc, eq, ne, schema } from '@3b/db';
-import { getOrder } from '../../orders';
+import { type AppTransaction, and, desc, eq, ne, schema, sql } from '@3b/db';
+import { getOrder, transitionOrder } from '../../orders';
 
 type ShipmentRow = typeof schema.shipments.$inferSelect;
 type OfferRow = typeof schema.shipmentOffers.$inferSelect;
@@ -229,4 +230,108 @@ export async function makeOffer(
     .where(eq(schema.users.id, moverId))
     .limit(1);
   return { status: 'ok', offer: toOffer(row as OfferRow, me?.name ?? null) };
+}
+
+/** Envíos asignados a un Mover (sus viajes). La RLS acota a `mover_id = me`. */
+export async function listMoverShipments(
+  db: AppTransaction,
+  moverId: string,
+): Promise<Shipment[]> {
+  const rows = await db
+    .select()
+    .from(schema.shipments)
+    .where(eq(schema.shipments.moverId, moverId))
+    .orderBy(desc(schema.shipments.createdAt));
+  return rows.map((r) => toShipment(r));
+}
+
+/** Resultado de aceptar una oferta (para mapear a HTTP sin 500). */
+export type AcceptOfferResult =
+  | { status: 'ok'; shipment: Shipment; pin: string }
+  | { status: 'shipment_not_found' }
+  | { status: 'not_open' }
+  | { status: 'offer_not_found' }
+  | { status: 'order_not_ready'; current: string };
+
+/**
+ * El solicitante **acepta una oferta** (M6b): el envío queda `asignado` con el
+ * Mover y el precio pactado, se **genera un PIN** y se guarda su **hash** (S-2,
+ * `crypt`/`gen_salt` de pgcrypto), se **rechazan** las demás ofertas activas, y el
+ * pedido pasa `listo → en_envio` (vía la API de `orders`). Exige el pedido en
+ * `listo` (el envío = Mover asignado, §6). Devuelve el PIN en claro **una vez** (no
+ * se persiste en claro). La RLS es el candado (solicitante o miembro de la tienda).
+ */
+export async function acceptOffer(
+  db: AppTransaction,
+  shipmentId: string,
+  offerId: string,
+  requesterId: string,
+): Promise<AcceptOfferResult> {
+  const [ship] = await db
+    .select()
+    .from(schema.shipments)
+    .where(eq(schema.shipments.id, shipmentId))
+    .limit(1);
+  if (!ship) return { status: 'shipment_not_found' };
+  if (ship.status !== 'ofertado') return { status: 'not_open' };
+
+  const [offer] = await db
+    .select()
+    .from(schema.shipmentOffers)
+    .where(
+      and(
+        eq(schema.shipmentOffers.id, offerId),
+        eq(schema.shipmentOffers.shipmentId, shipmentId),
+      ),
+    )
+    .limit(1);
+  if (!offer || offer.status !== 'active') return { status: 'offer_not_found' };
+
+  if (ship.orderId) {
+    const order = await getOrder(db, ship.orderId);
+    if (order && order.status !== 'listo') {
+      return { status: 'order_not_ready', current: order.status };
+    }
+  }
+
+  const pin = String(randomInt(0, 1_000_000)).padStart(6, '0');
+
+  await db
+    .update(schema.shipments)
+    .set({
+      status: 'asignado',
+      moverId: offer.moverId,
+      agreedPrice: offer.price,
+      pinHash: sql`crypt(${pin}, gen_salt('bf'))`,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.shipments.id, shipmentId));
+
+  // Aceptar esta oferta; rechazar el resto (las que siguen `active`).
+  await db
+    .update(schema.shipmentOffers)
+    .set({ status: 'accepted', updatedAt: new Date() })
+    .where(eq(schema.shipmentOffers.id, offerId));
+  await db
+    .update(schema.shipmentOffers)
+    .set({ status: 'rejected', updatedAt: new Date() })
+    .where(
+      and(
+        eq(schema.shipmentOffers.shipmentId, shipmentId),
+        eq(schema.shipmentOffers.status, 'active'),
+      ),
+    );
+
+  if (ship.orderId) {
+    await transitionOrder(
+      db,
+      ship.orderId,
+      requesterId,
+      'en_envio',
+      'Mover asignado.',
+    );
+  }
+
+  const full = await getShipment(db, shipmentId);
+  return { status: 'ok', shipment: full as Shipment, pin };
 }

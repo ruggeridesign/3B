@@ -91,3 +91,14 @@ export const CreateOfferInput = z.object({
   etaMin: z.number().int().positive().max(1440),
 });
 export type CreateOfferInput = z.infer<typeof CreateOfferInput>;
+
+/**
+ * Resultado de **aceptar** una oferta (M6b): el envío queda `asignado` y se
+ * devuelve el **PIN** de entrega en claro **una sola vez** (solo se guarda su hash,
+ * S-2). Quien acepta debe hacerlo llegar al receptor.
+ */
+export const ShipmentAssignment = z.object({
+  shipment: Shipment,
+  pin: z.string(),
+});
+export type ShipmentAssignment = z.infer<typeof ShipmentAssignment>;
