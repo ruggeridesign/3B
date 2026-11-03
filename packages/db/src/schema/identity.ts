@@ -30,12 +30,20 @@ export const users = identity.table('users', {
   ...timestamps,
 });
 
-/** Capacidad de Mover: perfil de repartidor (aprobación manual). */
+/**
+ * Capacidad de Mover: perfil de repartidor (aprobación manual). M6 lo enriquece
+ * con `operating_communities` (comunidades donde opera; habilita ofertar ahí).
+ * D-01: a futuro migra al esquema `shipping`; por ahora vive en `identity`.
+ */
 export const moverProfiles = identity.table('mover_profiles', {
   userId: uuid('user_id')
     .primaryKey()
     .references(() => users.id, { onDelete: 'cascade' }),
   status: text('status').notNull().default('pending'), // pending | approved | suspended
+  operatingCommunities: uuid('operating_communities')
+    .array()
+    .notNull()
+    .default([]),
   ...timestamps,
 });
 

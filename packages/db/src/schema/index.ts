@@ -7,5 +7,6 @@ export * from './messaging';
 export * from './orders';
 export * from './payments';
 export * from './platform';
+export * from './shipping';
 export * from './social';
 export * from './store';

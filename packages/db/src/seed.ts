@@ -179,7 +179,13 @@ async function main() {
 
   await db
     .insert(schema.moverProfiles)
-    .values([{ userId: U_PEDRO, status: 'approved' }])
+    .values([
+      {
+        userId: U_PEDRO,
+        status: 'approved',
+        operatingCommunities: [CORO, PUNTO_FIJO],
+      },
+    ])
     .onConflictDoNothing();
 
   // Taxonomía de ejemplo (categorías raíz y luego hijas, por el FK de jerarquía).

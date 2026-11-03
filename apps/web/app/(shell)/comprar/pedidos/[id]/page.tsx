@@ -10,11 +10,13 @@ import {
   type OrderAction,
   orderActions,
 } from '../../../../../lib/orders';
+import { getOrderShipment } from '../../../../../lib/shipping';
 import { getOrderReviews } from '../../../../../lib/social';
 import { OrderActions } from '../../../../_components/order-actions';
 import { OrderChat } from '../../../../_components/order-chat';
 import { PaymentPanel } from '../../../../_components/payment-panel';
 import { ReviewForm } from '../../../../_components/review-form';
+import { ShipmentPanel } from '../../../../_components/shipment-panel';
 
 const FULFILLMENT_LABEL: Record<string, string> = {
   pickup: 'Retiro en tienda',
@@ -58,6 +60,7 @@ export default async function PedidoDetalle({
   const payments = await getOrderPayments(id);
   const thread = await getOrderThread(id);
   const reviews = await getOrderReviews(id);
+  const shipment = await getOrderShipment(id);
 
   // URLs de las capturas de pago (visibles para ambas partes por la policy
   // media→pedido, M5c.2). Se resuelven acá para no exponer el id crudo.
@@ -148,6 +151,13 @@ export default async function PedidoDetalle({
           meId={me.user.id}
         />
       )}
+
+      <ShipmentPanel
+        orderId={o.id}
+        fulfillment={o.fulfillment}
+        shipment={shipment}
+        isSeller={isSeller}
+      />
 
       <ReviewForm orderId={o.id} review={myReview} canReview={canReview} />
 

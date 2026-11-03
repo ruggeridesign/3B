@@ -114,6 +114,16 @@ export {
   ReviewPaymentInput,
 } from './payments';
 export {
+  CreateOfferInput,
+  CreateShipmentInput,
+  OfferStatus,
+  Shipment,
+  ShipmentList,
+  ShipmentOffer,
+  ShipmentOfferList,
+  ShipmentStatus,
+} from './shipping';
+export {
   AnswerQuestionInput,
   AskQuestionInput,
   CreateReportInput,

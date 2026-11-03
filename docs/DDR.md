@@ -41,6 +41,15 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
   **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
   la proyección de ranking con señales de comportamiento).
+- **En curso: M6 · Envíos y rastreo.** **M6a — solicitud + ofertas** hecho (módulo
+  `shipping`): el Seller solicita un envío para un pedido `delivery`; los Movers
+  aprobados que operan en la comunidad ofertan (precio + ETA) → el envío pasa a
+  `ofertado` (trigger). `mover_profiles` enriquecido con `operating_communities`
+  (Pedro opera en Coro + Punto Fijo). Web: panel de envío en la ficha de pedido +
+  cola del Mover en `/mover`. **Siguiente: M6b** (aceptar oferta → `asignado` + PIN
+  S-2 + `orders` `listo→en_envio`), luego **M6c** (rastreo + entrega con PIN + el
+  `consume` real de stock). Difieren: geo (`geography`), vencer ofertas S-1 (worker),
+  KYC de Movers.
 - **M5 · Pedido end-to-end — CERRADO (features + infra).** Rebanadas: **M5a**
   carrito, **M5b** estados + reserva, **M5c** pago por comprobante **+ M5c.2 captura**,
   **M5d.1** chat, **M5d.2** reseñas, **M5d.3** preguntas, **M5d.4** reportes, e
@@ -178,7 +187,59 @@
 
 ---
 
-## 2026-11-02 · _(este commit)_ · feat — M5-infra.2: worker (runtime) + Valkey (pub/sub)
+## 2026-11-02 · _(este commit)_ · feat — M6a: envíos — solicitud + ofertas de Movers (módulo `shipping`)
+
+- **Qué:** arranca **M6 · Envíos**. Módulo nuevo `shipping`: el Seller **solicita un
+  envío** para un pedido `delivery` (nace `solicitado`); los **Movers aprobados que
+  operan en la comunidad ofertan** (precio + ETA), lo que mueve el envío a `ofertado`
+  (trigger). Se enriquece `mover_profiles` con `operating_communities`. La asignación
+  + PIN (M6b) y el rastreo + entrega (M6c) siguen.
+- **Por qué:** primera rebanada de la _salida_ de M6 ("solicitado → ofertado → …");
+  deja el carril de oferta de Movers con su RLS por comunidad.
+- **Impacto / archivos:**
+  - `packages/contracts/src/shipping.ts` (+exports): `ShipmentStatus`, `OfferStatus`,
+    `Shipment`, `ShipmentOffer`, `CreateShipmentInput`, `CreateOfferInput`.
+  - `packages/db/src/schema/identity.ts`: `mover_profiles.operating_communities`
+    (`uuid[]`). `packages/db/src/schema/shipping.ts` (+`index.ts`, +`reset.ts`):
+    `shipments` y `shipment_offers`. Migración `0030_wooden_marten_broadcloak.sql`:
+    ALTER mover_profiles + tablas + CHECKs + índice parcial de ofertas + RLS/grants +
+    **trigger `tg_shipment_offered`** (SECURITY DEFINER: la 1ª oferta mueve el envío a
+    `ofertado`, así `app` no necesita UPDATE sobre shipments). Seed: Pedro opera en
+    Coro + Punto Fijo.
+  - `packages/core/src/modules/shipping/`: `infra/shipping-repo.ts` (`createShipment`,
+    `getShipment`/`getShipmentByOrder`, `listOpenShipments`, `makeOffer`,
+    `listShipmentOffers`), `http/routes.ts`, `index.ts`. `apps/api` monta
+    `shippingRouter()`; `@3b/core` exporta `./modules/shipping`.
+  - `apps/web`: `lib/shipping.ts`, `_components/shipment-panel.tsx` (solicitar /
+    ver ofertas en la ficha de pedido) + `_components/mover-queue.tsx` (cola + ofertar)
+    reemplazando el placeholder de `/mover`.
+- **Decisiones de diseño:**
+  - **`ofertado` lo hace un trigger definer, no el Mover:** `app` tiene SELECT/INSERT
+    sobre shipments (no UPDATE); al insertar la 1ª oferta, el trigger (owner) bumpea
+    el estado. Movers no tocan el estado del envío a mano.
+  - **Elegibilidad por `operating_communities`:** la RLS de ofertas exige Mover
+    **aprobado** cuyo `operating_communities` contenga la comunidad del envío. El
+    envío lo ven el solicitante, el Mover asignado, la **tienda**, el **comprador**
+    (su pedido) y los Movers que operan ahí.
+  - **Geo diferido a M6c:** sin `geography(Point)` todavía; origen/destino son texto
+    (tienda / dirección del pedido). `pin_hash`/`proof_media_id` quedan previstos.
+  - **`shipping → orders`** por el `index.ts` público, sin ciclo.
+- **Verificación:** `pnpm check` **verde** (lint, typecheck 10/10, unit 19/19,
+  boundaries **398 módulos**). `pnpm test:integration`: db 6/6 + **core 111/111** (+5
+  de M6a: solicitar + ofertar → `ofertado`, no-delivery, no dos envíos activos, no
+  doble oferta, RLS: no-Mover no oferta / tercero no ve / comprador sí). Smoke: la API
+  publica las 5 rutas de `shipping`.
+- **Estado para retomar:** **M6b — asignación + PIN**: el solicitante acepta una
+  oferta → `asignado`, se genera `pin_hash` (S-2), se rechazan las demás ofertas, y el
+  pedido pasa `listo → en_envio` (shipping dispara la transición de `orders`, como
+  payments). Luego **M6c** — rastreo (`location_pings` particionada + GEO en Valkey +
+  WebSockets) + entrega con PIN (S-3) → pedido `entregado`→`completado` **y el
+  `consume` real de stock**. También: vencer ofertas (S-1) como job del worker, y el
+  KYC de Movers.
+- **Relacionado:** ROADMAP M6, `data-model.md` §2.5 (shipping/tracking), §5 (S-1…S-4),
+  §6 (máquina de envío), D-01; entrada de M5.
+
+## 2026-11-02 · `7ad0aad` · feat — M5-infra.2: worker (runtime) + Valkey (pub/sub)
 
 - **Qué:** enciende **`apps/worker`** (dejaba de ser placeholder) y **Valkey**. El
   worker corre dos jobs de sistema con la conexión **owner**: (1) **vencimiento de
