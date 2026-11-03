@@ -1,4 +1,12 @@
-import { type AppTransaction, and, eq, inArray, schema } from '@3b/db';
+import {
+  type AppDatabase,
+  type AppTransaction,
+  and,
+  eq,
+  inArray,
+  lt,
+  schema,
+} from '@3b/db';
 
 /**
  * Reservas de stock atadas a un pedido (M5b, O-3/I-5). Reservar (al `aceptado`)
@@ -106,4 +114,43 @@ export async function releaseForOrder(
     )
     .returning({ id: schema.reservations.id });
   return rows.length;
+}
+
+/** Resultado de un barrido de reservas vencidas. */
+export type SweepResult = { released: number; variants: string[] };
+
+/**
+ * Libera las reservas **vencidas** (I-5): las `active` con `expires_at` en el
+ * pasado pasan a `released` (el trigger devuelve `reserved`) y se emite un evento
+ * `stock.changed` por variante afectada en el **outbox** (lo publicará el worker).
+ * Es un **job de sistema**: corre con la conexión **owner** (sin contexto de
+ * usuario), por eso toma la `AppDatabase` y abre su propia transacción (atómico).
+ * Las reservas con `expires_at` nulo no vencen. Idempotente: si no hay vencidas,
+ * no hace nada.
+ */
+export async function sweepExpiredReservations(
+  db: AppDatabase,
+): Promise<SweepResult> {
+  return db.transaction(async (tx) => {
+    const released = await tx
+      .update(schema.reservations)
+      .set({ status: 'released', updatedAt: new Date() })
+      .where(
+        and(
+          eq(schema.reservations.status, 'active'),
+          lt(schema.reservations.expiresAt, new Date()),
+        ),
+      )
+      .returning({ variantId: schema.reservations.variantId });
+    if (released.length === 0) return { released: 0, variants: [] };
+
+    const variants = [...new Set(released.map((r) => r.variantId))];
+    await tx.insert(schema.outbox).values(
+      variants.map((variantId) => ({
+        topic: 'stock.changed',
+        payload: { variantId, reason: 'reservation_expired' },
+      })),
+    );
+    return { released: released.length, variants };
+  });
 }

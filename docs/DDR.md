@@ -170,7 +170,53 @@
 
 ---
 
-## 2026-11-02 · _(este commit)_ · feat — M5c.2: captura del pago (visibilidad media→pedido)
+## 2026-11-02 · _(este commit)_ · feat — M5-infra.1: outbox + vencimiento de reservas (I-5)
+
+- **Qué:** primera rebanada de la **infra de M5** (la que cierra lo último que
+  quedaba). Nueva tabla `platform.outbox` (patrón outbox) y un **job de sistema**
+  `sweepExpiredReservations`: libera las reservas `active` con `expires_at` vencido
+  (I-5) —el trigger devuelve `reserved`— y escribe un evento `stock.changed` por
+  variante en el outbox (lo publicará el worker). El **runtime del worker + Valkey**
+  es la rebanada siguiente (infra.2); acá está la **lógica**, testeada.
+- **Por qué:** `expires_at` se grababa desde M5b pero nadie lo barría; I-5 ("reservas
+  con vencimiento") quedaba a medias. Esto lo cierra y deja el `stock.changed` en el
+  outbox listo para publicar.
+- **Impacto / archivos:**
+  - `packages/db/src/schema/platform.ts` (+migración `0029_dear_thor_girl.sql`):
+    tabla `outbox` (topic/payload/published_at, solo inserción) + índice parcial
+    `WHERE published_at IS NULL` (pendientes). **Sin grants a `app`**: la escribe el
+    worker (owner) y, más adelante, las transacciones de negocio. `@3b/db` exporta
+    `lt`.
+  - `packages/core/src/modules/inventory/infra/reservations.ts` (+export):
+    `sweepExpiredReservations(db: AppDatabase)` — corre con la conexión **owner**
+    (sin contexto de usuario, bypassa RLS por ser job de sistema), en su propia
+    transacción; libera lo vencido y emite el evento.
+  - Test `reservation-sweep.test.ts`: conexión `app` para el setup (variante
+    dedicada) + conexión `owner` para el sweep.
+- **Decisiones de diseño:**
+  - **El sweep es un job de sistema → conexión owner:** no hay usuario, así que la
+    RLS de `reservations` (maker/miembro) bloquearía un barrido global. El worker usa
+    el owner (como las migraciones); el predicado es puramente de sistema
+    (`expires_at < now()`), no entra input de usuario.
+  - **`stock.changed` al outbox, no directo a Valkey:** el evento se persiste en la
+    misma transacción que la liberación (entrega garantizada); un publisher aparte
+    (infra.2) lo drena a Valkey. Las reservas con `expires_at` nulo no vencen.
+  - **Outbox owner-only por ahora:** el único productor en esta rebanada es el sweep
+    (owner). Cuando una transacción de negocio bajo `app` necesite emitir eventos,
+    esa migración sumará el grant + policy.
+- **Verificación:** `pnpm check` **verde** (lint, typecheck 10/10, unit 19/19,
+  boundaries **385 módulos**). `pnpm test:integration`: db 6/6 + **core 103/103** (+2:
+  barre lo vencido + emite evento; no toca lo futuro). El sweep es global pero solo
+  vencen las reservas de este test (las de otros archivos nacen con +30 min).
+- **Estado para retomar:** falta **infra.2 — worker (runtime) + Valkey**: encender
+  `apps/worker` (loop que llama al sweep en intervalo + publisher que drena el outbox
+  a Valkey pub/sub), Valkey en `docker-compose`, `VALKEY_URL` en config. Luego, el
+  **particionado mensual + retención de `messages`** (D-08) puede ser otro job del
+  worker. Con infra.2, **M5 queda 100% cerrado**.
+- **Relacionado:** ROADMAP M5 (infra), `data-model.md` §5 (I-5), §2.5 (outbox),
+  D-08; entradas de M5b (reservas) y M3 r1 (stock).
+
+## 2026-11-02 · `fd20b8d` · feat — M5c.2: captura del pago (visibilidad media→pedido)
 
 - **Qué:** cierra el pendiente de **M5c**: la **captura** del comprobante. El
   comprador adjunta una imagen al reportar el pago (`proof_media_id`, ya previsto) y

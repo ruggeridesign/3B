@@ -14,4 +14,6 @@ export {
   type ReserveResult,
   releaseForOrder,
   reserveForOrder,
+  type SweepResult,
+  sweepExpiredReservations,
 } from './infra/reservations';
