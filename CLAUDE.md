@@ -35,7 +35,9 @@ cómo seguir). Reglas:
 - **apps/web**: Next.js (App Router) + Tailwind v4 (`@tailwindcss/postcss`);
   consume `@3b/ui` y `@3b/api-client`.
 - **apps/api**: Hono + `@hono/zod-openapi` (OpenAPI en `/openapi.json`, docs en
-  `/docs`). Monta los routers http de los módulos de `@3b/core`.
+  `/docs`). Monta los routers http de los módulos de `@3b/core`. **WebSockets**
+  (`@hono/node-ws`) para el rastreo en vivo (`/ws/shipments/:id/track`), con el push
+  de posiciones vía **Valkey** pub/sub (M6c).
 - **apps/worker**: worker de sistema (corre con la conexión **owner**): vencimiento
   de reservas (I-5) + **publisher** del outbox (`platform.outbox`) a **Valkey**
   (pub/sub). `pnpm --filter @3b/worker dev`.

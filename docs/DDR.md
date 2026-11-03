@@ -53,11 +53,13 @@
   comprador confirma → `completado`. **Cierra la salida de M6 y el lazo de inventario
   (`consume`) de M5b.** **M6c.2a — rastreo (pings):** módulo nuevo `tracking`; el
   Mover postea pings de posición (`location_pings` particionada + `geography`/GIST) y
-  el comprador ve la última posición. Web: panel de envío en la ficha de pedido +
-  cola/"Mis viajes" en `/mover` (avanzar/entregar/compartir ubicación). **Siguiente:
-  M6c.2b** — push en vivo (Valkey pub/sub + GEO + **WebSockets** en `@3b/api`).
-  Difieren: vencer ofertas S-1 (worker), cancelar/fallido S-4, auto-cierre 48h, KYC de
-  Movers.
+  el comprador ve la última posición. **M6c.2b — push en vivo:** cada ping se publica
+  a **Valkey** (pub/sub por envío + GEO) desde `apps/api` y un **WebSocket**
+  (`/ws/shipments/:id/track`) lo reenvía al navegador en vivo. Web: panel de envío en
+  la ficha de pedido (posición en vivo) + cola/"Mis viajes" en `/mover`
+  (avanzar/entregar/compartir ubicación). **M6 CERRADO** salvo pendientes menores:
+  vencer ofertas S-1 (worker), cancelar/fallido S-4, auto-cierre 48h, KYC de Movers, y
+  un mapa real en la web. **Siguiente hito: M7 · Billing + panel de comunidad.**
 - **M5 · Pedido end-to-end — CERRADO (features + infra).** Rebanadas: **M5a**
   carrito, **M5b** estados + reserva, **M5c** pago por comprobante **+ M5c.2 captura**,
   **M5d.1** chat, **M5d.2** reseñas, **M5d.3** preguntas, **M5d.4** reportes, e
@@ -195,7 +197,49 @@
 
 ---
 
-## 2026-11-03 · _(este commit)_ · feat — M6c.2a: rastreo — pings de posición (módulo `tracking`)
+## 2026-11-03 · _(este commit)_ · feat — M6c.2b: rastreo en vivo — Valkey + WebSockets
+
+- **Qué:** push en vivo del rastreo (cierra M6c). Cada ping que postea el Mover se
+  **publica a Valkey** (canal `shipment:<id>:ping` + índice **GEO** `shipments:geo`)
+  desde `apps/api`, y un **WebSocket** `/ws/shipments/:id/track` suscribe al canal y
+  reenvía los pings al navegador en vivo. El comprador ve la posición del Mover
+  actualizándose sin recargar. **Enciende WebSockets + GEO (infra de M6).**
+- **Por qué:** completa el "posición en vivo" de M6: la lectura deja de ser por
+  recarga; el Mover se mueve y el mapa del comprador se actualiza al instante.
+- **Impacto / archivos:**
+  - `apps/api/package.json`: +`ioredis`, +`@hono/node-ws`, +`@3b/contracts`.
+  - `apps/api/src/live.ts`: `createLive(valkeyUrl)` — publisher (`publishPing`:
+    `GEOADD` + `PUBLISH`, best-effort) + factory de `subscriber` dedicado por WS.
+  - `apps/api/src/index.ts`: cablea `trackingRouter({ onPing })` → `publishPing`; ruta
+    **WS** `/ws/shipments/:id/track` (fuera de `/v1`: autentica por sesión + autoriza
+    por visibilidad del envío bajo RLS, luego suscribe a Valkey y reenvía);
+    `injectWebSocket(server)`.
+  - `apps/web/_components/shipment-panel.tsx`: abre el WS mientras el envío está en
+    curso y actualiza la posición en vivo (cae a la última posición del server si el
+    WS falla; marca "· en vivo").
+- **Decisiones de diseño:**
+  - **WS fuera de `/v1`:** el middleware de `/v1` abre una transacción por request
+    (no sirve para una conexión larga). El WS hace su propia auth (sesión) +
+    autorización (visibilidad del envío por RLS) en `onOpen`.
+  - **Subscriber dedicado por conexión:** ioredis no mezcla pub/sub en un cliente; se
+    crea un subscriber por WS y se cierra en `onClose`. Publicar es **best-effort**
+    (si Valkey cae, el request del ping no se cae; la DB es la fuente durable).
+  - **GEO para proximidad futura:** `GEOADD shipments:geo` deja la posición indexada
+    (para matching por cercanía / radio más adelante).
+- **Verificación:** `pnpm check` **verde** (lint, typecheck 10/10, unit 19/19,
+  boundaries **409 módulos**). `pnpm test:integration` sin cambios (2b no toca
+  core/db): db 6/6 + core 118/118. **Smoke e2e:** Valkey `PONG` + `GEOPOS` OK; la API
+  arranca con el publisher sin errores; el WS hace **upgrade** (open) y **cierra 1008**
+  sin sesión (auth del WS verificada).
+- **Estado para retomar:** **M6c completo** (rastreo en vivo con WebSockets). **M6
+  salvo pendientes menores:** vencer ofertas (S-1) como job del worker, cancelar/
+  fallido con motivo (S-4), auto-cierre a 48h (worker), KYC de Movers, y un mapa real
+  en la web (hoy se muestran lat/lng). Siguiente hito grande: **M7 · Billing + panel
+  de comunidad**.
+- **Relacionado:** ROADMAP M6 (infra WebSockets/GEO), `data-model.md` §2.5; entrada de
+  M6c.2a.
+
+## 2026-11-03 · `787c3ca` · feat — M6c.2a: rastreo — pings de posición (módulo `tracking`)
 
 - **Qué:** rastreo en vivo (parte 1). Módulo nuevo `tracking`: el **Mover asignado
   postea pings** de posición durante un viaje activo; el comprador/tienda (quien ve

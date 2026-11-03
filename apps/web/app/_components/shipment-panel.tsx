@@ -3,7 +3,18 @@
 import type { LocationPing, Shipment, ShipmentAssignment } from '@3b/contracts';
 import { Button } from '@3b/ui';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+
+const WS_BASE = (
+  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787'
+).replace(/^http/, 'ws');
+
+const TRIP_ACTIVE = new Set([
+  'asignado',
+  'hacia_retiro',
+  'retirado',
+  'en_transito',
+]);
 
 const STATUS_LABEL: Record<Shipment['status'], string> = {
   solicitado: 'Solicitado',
@@ -42,6 +53,28 @@ export function ShipmentPanel({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pin, setPin] = useState<string | null>(null);
+  const [livePing, setLivePing] = useState<LocationPing | null>(null);
+
+  // Rastreo en vivo por WebSocket mientras el envío está en curso (M6c.2b).
+  const shipmentId = shipment?.id;
+  const trackable = shipment ? TRIP_ACTIVE.has(shipment.status) : false;
+  useEffect(() => {
+    if (!shipmentId || !trackable) return;
+    let ws: WebSocket | null = null;
+    try {
+      ws = new WebSocket(`${WS_BASE}/ws/shipments/${shipmentId}/track`);
+      ws.onmessage = (e) => {
+        try {
+          setLivePing(JSON.parse(e.data) as LocationPing);
+        } catch {
+          /* ignora mensajes mal formados */
+        }
+      };
+    } catch {
+      /* el WS es un extra; si falla, queda la última posición del server */
+    }
+    return () => ws?.close();
+  }, [shipmentId, trackable]);
 
   // Los envíos son solo para pedidos a domicilio.
   if (fulfillment !== 'delivery') return null;
@@ -126,15 +159,19 @@ export function ShipmentPanel({
         </p>
       )}
 
-      {latestPing && (
-        <p className="text-muted-foreground text-sm">
-          📍 Mover en {latestPing.lat.toFixed(5)}, {latestPing.lng.toFixed(5)} ·{' '}
-          {new Date(latestPing.recordedAt).toLocaleTimeString('es', {
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
-        </p>
-      )}
+      {(() => {
+        const ping = livePing ?? latestPing;
+        return ping ? (
+          <p className="text-muted-foreground text-sm">
+            📍 Mover en {ping.lat.toFixed(5)}, {ping.lng.toFixed(5)} ·{' '}
+            {new Date(ping.recordedAt).toLocaleTimeString('es', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+            {livePing && ' · en vivo'}
+          </p>
+        ) : null;
+      })()}
 
       {pin && (
         <div className="glass space-y-0.5 rounded-lg p-3">

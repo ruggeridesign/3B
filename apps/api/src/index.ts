@@ -22,16 +22,18 @@ import { type AuthorizeOwner, mediaRouter } from '@3b/core/modules/media';
 import { messagingRouter } from '@3b/core/modules/messaging';
 import { ordersRouter } from '@3b/core/modules/orders';
 import { paymentsRouter } from '@3b/core/modules/payments';
-import { shippingRouter } from '@3b/core/modules/shipping';
+import { getShipment, shippingRouter } from '@3b/core/modules/shipping';
 import { socialRouter } from '@3b/core/modules/social';
 import { storeRouter } from '@3b/core/modules/store';
 import { systemRouter } from '@3b/core/modules/system';
 import { trackingRouter } from '@3b/core/modules/tracking';
 import { createAppDb, sql, withAppContext } from '@3b/db';
 import { serve } from '@hono/node-server';
+import { createNodeWebSocket } from '@hono/node-ws';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { getCookie } from 'hono/cookie';
 import { cors } from 'hono/cors';
+import { createLive } from './live';
 import { createLocalMediaStorage, localMediaRouter } from './local-media';
 
 const env = loadEnv();
@@ -39,6 +41,10 @@ const env = loadEnv();
 const appDb = createAppDb(env.APP_DATABASE_URL);
 
 const app = new OpenAPIHono<{ Variables: ApiVariables }>();
+
+// Rastreo en vivo (M6c.2b): publisher Valkey (pub/sub + GEO) + WebSockets.
+const live = createLive(env.VALKEY_URL);
+const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
 // Storage de media: en dev es local (disco + URLs firmadas). En prod, R2.
 const mediaStorage = createLocalMediaStorage({
@@ -138,7 +144,41 @@ app.route('/v1', paymentsRouter());
 app.route('/v1', messagingRouter());
 app.route('/v1', socialRouter());
 app.route('/v1', shippingRouter());
-app.route('/v1', trackingRouter());
+app.route(
+  '/v1',
+  trackingRouter({ onPing: (id, ping) => void live.publishPing(id, ping) }),
+);
+
+// WebSocket de rastreo en vivo (FUERA de /v1: no pasa por el middleware RLS). Se
+// autentica con la sesión y autoriza por la visibilidad del envío (RLS), luego se
+// suscribe al canal Valkey del envío y reenvía cada ping al navegador.
+app.get(
+  '/ws/shipments/:id/track',
+  upgradeWebSocket((c) => {
+    const id = c.req.param('id') ?? '';
+    let sub: ReturnType<typeof live.subscriber> | null = null;
+    return {
+      async onOpen(_evt, ws) {
+        const session = await auth.api.getSession({
+          headers: c.req.raw.headers,
+        });
+        if (!session) return ws.close(1008, 'no auth');
+        const visible = await withAppContext(
+          appDb.db,
+          { userId: session.user.id },
+          (tx) => getShipment(tx, id),
+        );
+        if (!visible) return ws.close(1008, 'forbidden');
+        sub = live.subscriber();
+        await sub.subscribe(live.channel(id));
+        sub.on('message', (_ch, msg) => ws.send(msg));
+      },
+      onClose() {
+        sub?.disconnect();
+      },
+    };
+  }),
+);
 
 // Documento OpenAPI (contrato de la API).
 app.doc('/openapi.json', {
@@ -167,6 +207,7 @@ app.onError((err, c) => {
   return c.json({ error: 'Error interno' }, 500);
 });
 
-serve({ fetch: app.fetch, port: env.API_PORT }, (info) => {
+const server = serve({ fetch: app.fetch, port: env.API_PORT }, (info) => {
   console.log(`[3b-api] http://localhost:${info.port}  (docs: /docs)`);
 });
+injectWebSocket(server);

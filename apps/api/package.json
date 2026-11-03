@@ -12,11 +12,14 @@
   "dependencies": {
     "@3b/auth": "workspace:*",
     "@3b/config": "workspace:*",
+    "@3b/contracts": "workspace:*",
     "@3b/core": "workspace:*",
     "@3b/db": "workspace:*",
     "@hono/node-server": "^2.1.5",
+    "@hono/node-ws": "^1.2.0",
     "@hono/zod-openapi": "^1.6.3",
-    "hono": "^4.13.14"
+    "hono": "^4.13.14",
+    "ioredis": "^5.4.2"
   },
   "devDependencies": {
     "tsx": "^4.23.15"
