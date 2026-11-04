@@ -32,10 +32,12 @@ export function Navbar({ me }: { me: MeResponse }) {
   const pathname = usePathname();
   const router = useRouter();
 
+  const isCommunityAdmin = me.communities.some((c) => c.role === 'admin');
   const spaces = [
     { href: '/comprar', label: 'Comprar', show: me.capabilities.isMaker },
     { href: '/mi-tienda', label: 'Mi Tienda', show: me.capabilities.isSeller },
     { href: '/mover', label: 'Mover', show: me.capabilities.isMover },
+    { href: '/comunidad', label: 'Comunidad', show: isCommunityAdmin },
     { href: '/admin', label: 'Admin', show: me.capabilities.isPlatformAdmin },
   ].filter((s) => s.show);
 

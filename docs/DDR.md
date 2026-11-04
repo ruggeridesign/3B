@@ -54,8 +54,12 @@
   (reusando `payment_reports` con `statement_id`) → `pending`, y un admin confirma
   (`paid`) o rechaza (`open`), vía triggers definer. Web: suscripción + comisiones +
   estados de cuenta + reportar pago en `mi-tienda`/`/mover`; "Cobros por confirmar" en
-  `/admin`. **Siguiente: M7d** (panel de comunidad: KYC de Movers + cobros por comunidad +
-  reportes + métricas; ahí se integra la confirmación de cobros del admin de comunidad).
+  `/admin`. **M7d en curso: M7d.1 — panel de comunidad** hecho: página `/comunidad` para
+  admins de comunidad (link en navbar) que reúne verificaciones de tienda (KYC), cobros por
+  confirmar y reportes, acotado por RLS a su comunidad (reusa el backend existente).
+  **Siguiente: M7d.2** (KYC + aprobación de Movers: RLS/rutas para sujeto `mover`,
+  derivación de comunidad por `operating_communities`, trigger que pone `isMover`), luego
+  **M7d.3** (métricas de comunidad).
 - **M6 · Envíos y rastreo — CERRADO.** **M6a — solicitud + ofertas** y **M6b —
   asignación + PIN** (módulo `shipping`): el Seller solicita un envío para un
   pedido `delivery`; los Movers aprobados que operan en la comunidad ofertan →
@@ -211,6 +215,44 @@
   unidad lógica; cada uno con su entrada en este DDR.
 
 ---
+
+## 2026-11-04 · _(este commit)_ · feat — M7d.1: panel de comunidad (shell + colas RLS-scoped)
+
+- **Qué:** arranca **M7d**. Página `/comunidad` para **admins de comunidad**
+  (`me.communities` con `role='admin'`) + link en el navbar. Reúne, acotado por la RLS a
+  su(s) comunidad(es): la cola de **verificaciones (KYC) de tienda** (aprobar/rechazar),
+  los **cobros por confirmar** y los **reportes** abiertos. Reusa el backend existente
+  (sin cambios de servidor).
+- **Por qué:** da al admin de comunidad su propio panel (hasta ahora solo existía el de
+  plataforma en `/admin`); las acciones ya las soportaba la RLS, faltaba la UI.
+- **Impacto / archivos:**
+  - `apps/web/lib/community.ts` (nuevo): `getCommunityKyc(communityId)` →
+    `GET /v1/communities/{id}/kyc`.
+  - `apps/web/app/_components/kyc-review-queue.tsx` (nuevo): cola de verificaciones;
+    aprobar/rechazar vía `POST /v1/kyc/{id}/review`.
+  - `apps/web/app/(shell)/comunidad/page.tsx` (nuevo): gate a admins de comunidad; KYC por
+    comunidad (con nombre de tienda resuelto) + cobros (`CollectionsQueue`) + reportes
+    (`ReportsQueue`).
+  - `apps/web/app/_components/navbar.tsx`: link **Comunidad** si el usuario admina ≥1
+    comunidad.
+- **Decisiones de diseño:**
+  - **Reuso del backend RLS-scoped:** `GET /communities/{id}/kyc`, `GET /me/collections` y
+    `GET /reports?status=open` ya acotan por la comunidad del admin; el panel solo compone
+    la UI. Sin endpoints nuevos.
+  - **Separación plataforma/comunidad:** `/admin` (plataforma, ve todo) vs `/comunidad`
+    (acotado a la comunidad del admin). Un admin de plataforma que no es admin de comunidad
+    no ve `/comunidad`.
+  - **Documento KYC sin preview por ahora:** la cola muestra tienda + tipo de doc + si
+    adjuntó documento; la previsualización del archivo (visibilidad media→revisor) queda
+    para después.
+- **Verificación:** `pnpm check` **verde** (lint, typecheck, unit 19/19, boundaries
+  **425 módulos**). Sin cambios de backend → los tests de integración existentes cubren las
+  rutas reusadas (kyc.test, billing-collections, reportes).
+- **Estado para retomar:** **M7d.2 — KYC + aprobación de Movers** (el enum `mover` existe
+  pero RLS/rutas solo cubren `store`): alta de KYC de Mover, derivación de comunidad vía
+  `operating_communities`, revisión por el admin de comunidad y trigger de aprobación que
+  pone `mover_profiles.status='approved'` (→ `isMover`). Luego **M7d.3 — métricas**.
+- **Relacionado:** ROADMAP M7; entradas de M7c.2 (cobros), M5d.4 (reportes), M2 (KYC tienda).
 
 ## 2026-11-04 · _(este commit)_ · feat — M7c.2: billing — cobro de estados de cuenta por comprobante (D-03)
 
