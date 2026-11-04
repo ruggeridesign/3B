@@ -142,6 +142,21 @@ export const MoverStatus = z.enum(['pending', 'approved', 'suspended']);
 export type MoverStatus = z.infer<typeof MoverStatus>;
 
 /**
+ * Métricas de una comunidad para su panel de admin (M7d.3). Las agrega una función
+ * `SECURITY DEFINER` auto-guardada (bypassa RLS pero solo responde al admin de la
+ * comunidad / plataforma). `gmv` = ventas completadas (moneda base).
+ */
+export const CommunityMetrics = z.object({
+  stores: z.number().int(),
+  movers: z.number().int(),
+  orders: z.number().int(),
+  gmv: z.string(),
+  pendingCollections: z.number().int(),
+  openReports: z.number().int(),
+});
+export type CommunityMetrics = z.infer<typeof CommunityMetrics>;
+
+/**
  * Un usuario se postula como **Mover** en una comunidad (M7d.2). Crea/reusa su perfil
  * (`pending`) y envía una verificación (KYC de sujeto `mover`) a esa comunidad; el admin
  * la aprueba (→ `approved`, suma la comunidad a `operating_communities`) o la rechaza.

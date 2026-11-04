@@ -15,6 +15,7 @@ import {
   listSubmissionsBySubject,
   reviewSubmission,
 } from '../infra/kyc-repo';
+import { getCommunityMetrics } from '../infra/metrics-repo';
 
 const uuid = z
   .string()
@@ -67,6 +68,17 @@ const applyMoverBody = z
     expiresAt: z.string().datetime().nullable().optional(),
   })
   .openapi('ApplyMover');
+
+const metricsOut = z
+  .object({
+    stores: z.number().int(),
+    movers: z.number().int(),
+    orders: z.number().int(),
+    gmv: z.string(),
+    pendingCollections: z.number().int(),
+    openReports: z.number().int(),
+  })
+  .openapi('CommunityMetrics');
 
 const errorSchema = z.object({ error: z.string() }).openapi('KycError');
 
@@ -316,6 +328,44 @@ export function kycRouter() {
       const { db, userId } = sessionCtx(c);
       const submissions = await listMyMoverApplications(db, userId);
       return c.json({ submissions }, 200);
+    },
+  );
+
+  // Métricas de una comunidad (admin de ESA comunidad). La función definer también
+  // auto-guarda; el gate acá da un 403 limpio.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/communities/{id}/metrics',
+      tags: ['identity'],
+      summary: 'Métricas de la comunidad (admin)',
+      request: { params: storeParam },
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: metricsOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'No sos admin de esta comunidad',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      if (!(await isCommunityAdmin(db, id))) {
+        return c.json({ error: 'No sos admin de esta comunidad.' }, 403);
+      }
+      const metrics = await getCommunityMetrics(db, id);
+      if (!metrics) {
+        return c.json({ error: 'No sos admin de esta comunidad.' }, 403);
+      }
+      return c.json(metrics, 200);
     },
   );
 

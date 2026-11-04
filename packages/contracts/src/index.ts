@@ -64,6 +64,7 @@ export {
 export {
   ApplyMoverInput,
   Capabilities,
+  CommunityMetrics,
   CommunityRole,
   CreateKycSubmissionInput,
   Impersonation,

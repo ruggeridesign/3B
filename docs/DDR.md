@@ -41,26 +41,23 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
   **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
   la proyección de ranking con señales de comportamiento).
-- **En curso: M7 · Billing + panel de comunidad. M7c CERRADO.** **M7a — planes +
-  suscripciones**, **M7b — comisiones devengadas**, **M7c.1 — estados de cuenta** y
-  **M7c.2 — cobro por comprobante** hechos (módulo `billing`): `plans` + `subscriptions`
-  (una por tienda; `trial` por trigger; la cambia un admin); `fee_accruals` (polimórfico
-  `store`|`mover`): al `completado` devenga comisión de venta a la tienda
-  (+ `orders.fee_amount`) y al `entregado` comisión de envío al Mover (S-3), vía triggers
-  definer, tasa **% por env** (`COMMISSION_RATE` → `billing.config`); `statements`
-  (polimórfico, mensual): un **job del worker** (owner) suma suscripción + comisiones del
-  período con `billing.generate_statements(period)` (upsert que solo pisa filas `open`); y
-  el **cobro por comprobante** (D-03): el sujeto reporta el pago de un estado `open`
-  (reusando `payment_reports` con `statement_id`) → `pending`, y un admin confirma
-  (`paid`) o rechaza (`open`), vía triggers definer. Web: suscripción + comisiones +
-  estados de cuenta + reportar pago en `mi-tienda`/`/mover`; "Cobros por confirmar" en
-  `/admin`. **M7d en curso: M7d.1 (panel de comunidad) y M7d.2 (KYC + aprobación de Movers)
-  hechos.** `/comunidad` para admins de comunidad (link en navbar) reúne verificaciones de
-  tienda **y de Mover** (KYC), cobros por confirmar y reportes, acotado por RLS a su
-  comunidad. Un usuario se postula como Mover en una comunidad (`/mover` → KYC de sujeto
-  `mover` con `community_id`); al aprobar, el trigger pone `mover_profiles.status='approved'`
-  + suma la comunidad a `operating_communities` (queda `isMover`). **Siguiente: M7d.3**
-  (métricas de comunidad: conteos de tiendas, Movers, pedidos, GMV, cobros, reportes).
+- **M7 · Billing + panel de comunidad — CERRADO.** **M7a/M7b/M7c/M7d** completos (módulo
+  `billing` + identity/comunidad). `plans` + `subscriptions` (una por tienda; `trial` por
+  trigger; la cambia un admin); `fee_accruals` (polimórfico `store`|`mover`): al `completado`
+  devenga comisión de venta a la tienda (+ `orders.fee_amount`) y al `entregado` comisión de
+  envío al Mover (S-3), vía triggers definer, tasa **% por env**; `statements` (polimórfico,
+  mensual): un **job del worker** (owner) suma suscripción + comisiones con
+  `billing.generate_statements(period)`; **cobro por comprobante** (D-03): el sujeto reporta el
+  pago de un estado `open` (reusando `payment_reports` con `statement_id`) → `pending`, y un
+  admin confirma (`paid`) o rechaza (`open`), vía triggers definer. **Panel de comunidad**
+  (`/comunidad`, admins de comunidad): verificaciones de tienda **y de Mover** (KYC), **cobros**
+  por confirmar, **reportes**, y **métricas** (tiendas, Movers, pedidos, GMV, cobros, reportes
+  vía función definer auto-guardada). **KYC + aprobación de Movers**: un usuario se postula en
+  una comunidad (`/mover` → KYC de sujeto `mover` con `community_id`); al aprobar, el trigger
+  pone `mover_profiles.status='approved'` + suma la comunidad a `operating_communities` (queda
+  `isMover`). **Siguiente hito: M8 · PWA** (Serwist, offline, instalable, push). Mejoras
+  futuras de M7 (no bloquean): statements por cron real, `past_due`/`cancelled` automáticos,
+  preview del documento KYC en la cola.
 - **M6 · Envíos y rastreo — CERRADO.** **M6a — solicitud + ofertas** y **M6b —
   asignación + PIN** (módulo `shipping`): el Seller solicita un envío para un
   pedido `delivery`; los Movers aprobados que operan en la comunidad ofertan →
@@ -216,6 +213,40 @@
   unidad lógica; cada uno con su entrada en este DDR.
 
 ---
+
+## 2026-11-04 · _(este commit)_ · feat — M7d.3: métricas de comunidad (cierra M7)
+
+- **Qué:** tablero de **métricas** en el panel de comunidad: tiendas, Movers aprobados que
+  operan ahí, pedidos, **GMV** (ventas completadas), cobros pendientes y reportes abiertos de
+  la comunidad. Endpoint `GET /communities/{id}/metrics`. **Cierra M7.**
+- **Por qué:** completa el panel de comunidad (roadmap M7: "métricas") y le da al admin una
+  foto de su comunidad.
+- **Impacto / archivos:**
+  - `packages/contracts/src/identity.ts` (+export): `CommunityMetrics`.
+  - `packages/db/migrations/0039_community_metrics.sql` (**migración manual**, sin cambio de
+    schema Drizzle): función `identity.community_metrics(cid)` **SECURITY DEFINER
+    auto-guardada** — agrega conteos cross-schema bypasseando RLS, pero solo devuelve filas si
+    el que consulta es admin de la comunidad / plataforma (`REVOKE` de PUBLIC + `GRANT` a
+    `app`). + entrada en `_journal.json` y snapshot `0039`.
+  - `packages/core/src/modules/identity/`: `infra/metrics-repo.ts` (`getCommunityMetrics`,
+    null si sin acceso) + ruta `GET /communities/{id}/metrics` (gate `isCommunityAdmin`).
+  - `apps/web`: `lib/community.ts` (`getCommunityMetrics`), `CommunityMetricsTiles` + tablero
+    por comunidad en `/comunidad`.
+- **Decisiones de diseño:**
+  - **Función definer auto-guardada (no RLS por fila):** las métricas necesitan contar filas
+    que la RLS le oculta al admin de comunidad (mover_profiles/orders ajenos). La función
+    (owner) bypassa RLS para los conteos, pero se auto-guarda con `authz.is_community_admin`
+    (lee `app.user_id` del contexto) → solo el admin obtiene datos, y solo agregados.
+  - **Migración manual (solo función):** sin cambio de schema Drizzle; el `.sql` + journal +
+    snapshot se agregaron a mano (patrón para DDL puro).
+- **Verificación:** `pnpm check` **verde** (lint, typecheck, unit 19/19, boundaries **430
+  módulos**). `pnpm test:integration`: db 6/6 + **core 131/131** (+3 de M7d.3: el admin de
+  comunidad y el de plataforma obtienen conteos; un miembro no-admin obtiene `null`).
+- **Estado para retomar:** **M7 CERRADO** (billing + panel de comunidad). Siguiente hito:
+  **M8 · PWA** (Serwist, offline, instalable, push). Mejoras futuras de M7 (no bloquean):
+  generación de statements por cron real, `past_due`/`cancelled` automáticos, preview del
+  documento KYC en la cola, y métricas con series temporales.
+- **Relacionado:** ROADMAP M7; entradas de M7d.1, M7d.2.
 
 ## 2026-11-04 · _(este commit)_ · feat — M7d.2: KYC + aprobación de Movers
 

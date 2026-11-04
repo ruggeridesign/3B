@@ -1,10 +1,28 @@
-import type { KycSubmission } from '@3b/contracts';
+import type { CommunityMetrics, KycSubmission } from '@3b/contracts';
 import { cookies } from 'next/headers';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787';
 
 async function cookieHeader(): Promise<string> {
   return (await cookies()).toString();
+}
+
+/** Métricas de una comunidad (admin). null si no sos admin o falla. */
+export async function getCommunityMetrics(
+  communityId: string,
+): Promise<CommunityMetrics | null> {
+  const cookie = await cookieHeader();
+  if (!cookie) return null;
+  try {
+    const res = await fetch(`${API}/v1/communities/${communityId}/metrics`, {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as CommunityMetrics;
+  } catch {
+    return null;
+  }
 }
 
 /** Mis solicitudes de Mover (verificaciones de sujeto `mover`). [] si falla. */
