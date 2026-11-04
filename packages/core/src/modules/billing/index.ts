@@ -6,6 +6,7 @@ export {
   getStatement,
   getSubscription,
   listFeeAccruals,
+  listPendingStatements,
   listPlans,
   listStatements,
   type SetSubscriptionResult,

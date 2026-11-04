@@ -41,18 +41,21 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
   **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
   la proyección de ranking con señales de comportamiento).
-- **En curso: M7 · Billing + panel de comunidad.** **M7a — planes + suscripciones**,
-  **M7b — comisiones devengadas** y **M7c.1 — estados de cuenta** hechos (módulo
-  `billing`): `plans` + `subscriptions` (una por tienda; `trial` por trigger; la cambia un
-  admin); `fee_accruals` (polimórfico `store`|`mover`): al `completado` devenga comisión
-  de venta a la tienda (+ `orders.fee_amount`) y al `entregado` comisión de envío al Mover
-  (S-3), vía triggers definer, tasa **% por env** (`COMMISSION_RATE` → `billing.config`); y
-  `statements` (polimórfico, mensual): un **job del worker** (owner) suma suscripción +
-  comisiones del período con `billing.generate_statements(period)` (upsert que solo pisa
-  filas `open`). Web: estado + comisiones + estados de cuenta en `mi-tienda` y `/mover`.
-  **Siguiente: M7c.2** (cobro por comprobante: ALTER `payment_reports` con `statement_id`,
-  D-03; `open→pending→paid`, el admin confirma), luego **M7d** (panel de comunidad: KYC +
-  cobros + reportes + métricas).
+- **En curso: M7 · Billing + panel de comunidad. M7c CERRADO.** **M7a — planes +
+  suscripciones**, **M7b — comisiones devengadas**, **M7c.1 — estados de cuenta** y
+  **M7c.2 — cobro por comprobante** hechos (módulo `billing`): `plans` + `subscriptions`
+  (una por tienda; `trial` por trigger; la cambia un admin); `fee_accruals` (polimórfico
+  `store`|`mover`): al `completado` devenga comisión de venta a la tienda
+  (+ `orders.fee_amount`) y al `entregado` comisión de envío al Mover (S-3), vía triggers
+  definer, tasa **% por env** (`COMMISSION_RATE` → `billing.config`); `statements`
+  (polimórfico, mensual): un **job del worker** (owner) suma suscripción + comisiones del
+  período con `billing.generate_statements(period)` (upsert que solo pisa filas `open`); y
+  el **cobro por comprobante** (D-03): el sujeto reporta el pago de un estado `open`
+  (reusando `payment_reports` con `statement_id`) → `pending`, y un admin confirma
+  (`paid`) o rechaza (`open`), vía triggers definer. Web: suscripción + comisiones +
+  estados de cuenta + reportar pago en `mi-tienda`/`/mover`; "Cobros por confirmar" en
+  `/admin`. **Siguiente: M7d** (panel de comunidad: KYC de Movers + cobros por comunidad +
+  reportes + métricas; ahí se integra la confirmación de cobros del admin de comunidad).
 - **M6 · Envíos y rastreo — CERRADO.** **M6a — solicitud + ofertas** y **M6b —
   asignación + PIN** (módulo `shipping`): el Seller solicita un envío para un
   pedido `delivery`; los Movers aprobados que operan en la comunidad ofertan →
@@ -208,6 +211,51 @@
   unidad lógica; cada uno con su entrada en este DDR.
 
 ---
+
+## 2026-11-04 · _(este commit)_ · feat — M7c.2: billing — cobro de estados de cuenta por comprobante (D-03)
+
+- **Qué:** cierra **M7c**. El **sujeto** (tienda/Mover) reporta el pago de un estado de
+  cuenta `open` por **comprobante** (reusando M5c); el estado pasa `open→pending` y un
+  **admin** confirma el cobro (`pending→paid`) o lo rechaza (vuelve a `open`). Web: el
+  sujeto reporta desde `mi-tienda`/`/mover`; el admin confirma en `/admin` ("Cobros por
+  confirmar").
+- **Por qué:** cierra el lazo de billing (devengado → facturado → cobrado) con trazabilidad
+  del cobro (referencia + revisor).
+- **Impacto / archivos:**
+  - `packages/db/src/schema/payments.ts` (+migración `0037_sudden_shinko_yamashiro.sql`,
+    **D-03**): `payment_reports.order_id` **nullable** + `statement_id` (FK `statements`) +
+    CHECK (exactamente uno) + índice. RLS del caso statement (SELECT/INSERT del sujeto;
+    UPDATE del admin) sumada a las de pedido (OR de policies). **2 triggers definer**
+    (billing escucha a payments): al reportar → `open→pending`; al revisar → `paid`
+    (confirmar) o `open` (rechazar).
+  - `packages/contracts/src/payments.ts`: `PaymentReport.orderId` nullable + `statementId`.
+  - `packages/core/src/modules/payments/`: `reportStatementPayment`, `reviewStatementPayment`,
+    `listPaymentsForStatement` (+`referenceTaken` DRY) + rutas `POST/GET /statements/{id}/
+    payments` y `.../{paymentId}/review`.
+  - `packages/core/src/modules/billing/`: `listPendingStatements` + ruta `GET /me/collections`.
+  - `apps/web`: `StatementReport` (sujeto reporta en `open`), `CollectionsQueue` (admin
+    confirma/rechaza en `/admin`), fetchers en `lib/billing.ts`.
+- **Decisiones de diseño:**
+  - **Reuso de `payment_reports` (D-03), no tabla nueva:** el comprobante es el mismo objeto
+    (método + referencia única P-1 + monto + revisor); referencia polimórfica a pedido **o**
+    estado de cuenta (CHECK de exactamente uno).
+  - **Transiciones del estado de cuenta por triggers definer:** billing "escucha" a payments
+    (como escucha a orders/shipments en M7b); `app` nunca hace UPDATE directo de `statements`
+    (sigue SELECT-only). Idempotente por los guards de estado.
+  - **Confirma el admin (no el Seller):** a diferencia del pago de pedido (lo confirma la
+    tienda), el cobro de la plataforma lo confirma un **admin** (de la comunidad del estado
+    de cuenta, o de plataforma para Movers). La RLS es el candado.
+- **Verificación:** `pnpm check` **verde** (lint, typecheck, unit 19/19, boundaries
+  **422 módulos**). `pnpm test:integration`: db 6/6 + **core 127/127** (+1 de M7c.2: sujeto
+  dedicado — reporta→pending, admin rechaza→open, reporta→confirma→paid; RLS: un tercero no
+  reporta ni ve, el sujeto no confirma su propio cobro).
+- **Estado para retomar:** **M7c completo** (estados de cuenta + cobro por comprobante).
+  Siguiente: **M7d — panel de comunidad** (KYC de Movers, cobros por comunidad, reportes,
+  métricas); la confirmación de cobros por el **admin de comunidad** (hoy en `/admin`, de
+  plataforma) se integra ahí. Pendientes menores de M7: disparar la generación de statements
+  por cron real (hoy el worker la corre por intervalo) y `past_due`/`cancelled` automáticos.
+- **Relacionado:** ROADMAP M7, `data-model.md` §2.5 (statements) · §9 (D-03); entradas de
+  M7c.1, M7a/M7b, M5c.
 
 ## 2026-11-04 · _(este commit)_ · feat — M7c.1: billing — estados de cuenta (`statements`)
 

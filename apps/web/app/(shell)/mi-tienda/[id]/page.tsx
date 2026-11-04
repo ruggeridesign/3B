@@ -133,7 +133,9 @@ export default async function StoreDetail({
 
       <StoreOrders orders={orders} />
 
-      {statements && <Statements statements={statements.statements} />}
+      {statements && (
+        <Statements statements={statements.statements} canReport={canManage} />
+      )}
 
       <StoreKyc
         storeId={store.id}

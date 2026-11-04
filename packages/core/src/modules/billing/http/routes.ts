@@ -4,6 +4,7 @@ import {
   getStatement,
   getSubscription,
   listFeeAccruals,
+  listPendingStatements,
   listPlans,
   listStatements,
   setSubscription,
@@ -307,6 +308,32 @@ export function billingRouter() {
     async (c) => {
       const { db, userId } = sessionCtx(c);
       const list = await listStatements(db, 'mover', userId);
+      return c.json(list, 200);
+    },
+  );
+
+  // Cobros por confirmar (estados de cuenta `pending`) — para el admin. La RLS
+  // acota a lo que ve el que consulta (admin de comunidad/plataforma, o el sujeto).
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/me/collections',
+      tags: ['billing'],
+      summary: 'Cobros por confirmar (estados de cuenta pendientes)',
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: statementListOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const list = await listPendingStatements(db);
       return c.json(list, 200);
     },
   );

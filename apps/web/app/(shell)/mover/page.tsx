@@ -56,7 +56,9 @@ export default async function Mover() {
         <MoverQueue shipments={open} />
       </section>
 
-      {statements && <Statements statements={statements.statements} />}
+      {statements && (
+        <Statements statements={statements.statements} canReport />
+      )}
     </div>
   );
 }

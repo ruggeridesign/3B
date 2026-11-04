@@ -214,6 +214,22 @@ export async function getStatement(
 }
 
 /**
+ * Estados de cuenta **pendientes de confirmación de cobro** (`pending`), más recientes
+ * primero. Para el panel del admin (cobros por confirmar): la RLS los acota a lo que ve
+ * el que consulta (un admin ve los de su comunidad/plataforma; el sujeto, el propio).
+ */
+export async function listPendingStatements(
+  db: AppTransaction,
+): Promise<StatementList> {
+  const rows = await db
+    .select()
+    .from(schema.statements)
+    .where(eq(schema.statements.status, 'pending'))
+    .orderBy(desc(schema.statements.period));
+  return { statements: rows.map(toStatement) };
+}
+
+/**
  * Genera/actualiza los estados de cuenta de un período (`YYYY-MM`). **Job de
  * sistema**: corre con la conexión **owner** (el worker), delega la agregación a la
  * función SQL `billing.generate_statements` (SECURITY DEFINER). Idempotente: solo

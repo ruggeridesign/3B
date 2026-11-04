@@ -9,6 +9,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { timestamps } from './_shared';
+import { statements } from './billing';
 import { users } from './identity';
 import { mediaFiles } from './media';
 import { orderRecords } from './orders';
@@ -18,20 +19,24 @@ import { orderRecords } from './orders';
 export const payments = pgSchema('payments');
 
 /**
- * Reporte de pago (comprobante) de un pedido. El Maker lo crea (`reported`); el
- * Seller lo confirma/rechaza (`confirmed`/`rejected`), lo que mueve el pedido por
- * la máquina de estados. `reference` es la referencia bancaria **única global**
- * (P-1): bloquea reportar dos veces la misma. `proof_media_id` (captura) queda
- * previsto; su subida/visibilidad llega después. La RLS: lo ve el Maker del
- * pedido o un miembro de la tienda; lo crea el Maker, lo revisa la tienda.
+ * Reporte de pago (comprobante) de un **pedido** (M5c) o de un **estado de cuenta**
+ * (M7c.2, D-03). Referencia polimórfica: exactamente uno de `order_id`/`statement_id`
+ * (CHECK). El sujeto lo crea (`reported`); el revisor lo confirma/rechaza
+ * (`confirmed`/`rejected`), lo que mueve el pedido (máquina de estados) o el estado de
+ * cuenta (triggers billing: `open→pending→paid`, rechazo → `open`). `reference` es la
+ * referencia bancaria **única global** (P-1). La RLS deriva del objetivo: el pedido (el
+ * Maker o la tienda) o el estado de cuenta (el sujeto o un admin).
  */
 export const paymentReports = payments.table(
   'payment_reports',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    orderId: uuid('order_id')
-      .notNull()
-      .references(() => orderRecords.id, { onDelete: 'cascade' }),
+    orderId: uuid('order_id').references(() => orderRecords.id, {
+      onDelete: 'cascade',
+    }),
+    statementId: uuid('statement_id').references(() => statements.id, {
+      onDelete: 'cascade',
+    }),
     method: text('method').notNull(), // PaymentMethodType (store)
     amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
     currency: text('currency').notNull().default('USD'),
@@ -54,6 +59,7 @@ export const paymentReports = payments.table(
     // P-1: una referencia (por método) no se reporta dos veces.
     unique('payment_reports_method_reference_unique').on(t.method, t.reference),
     index('payment_reports_order_idx').on(t.orderId),
+    index('payment_reports_statement_idx').on(t.statementId),
     // Lookup inverso media→reporte (policy de visibilidad de la captura, M5c.2).
     index('payment_reports_proof_idx').on(t.proofMediaId),
   ],

@@ -260,6 +260,13 @@
       "when": 1793797431130,
       "tag": "0036_mixed_paper_doll",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1793803248885,
+      "tag": "0037_sudden_shinko_yamashiro",
+      "breakpoints": true
     }
   ]
 }

@@ -5,11 +5,15 @@ import {
   requireSession,
   sessionCtx,
 } from '../../../http';
+import { getStatement } from '../../billing';
 import { getOrder } from '../../orders';
 import {
   listPaymentsForOrder,
+  listPaymentsForStatement,
   reportPayment,
+  reportStatementPayment,
   reviewPayment,
+  reviewStatementPayment,
 } from '../infra/payment-repo';
 
 const money = z.string().regex(/^\d{1,10}(\.\d{1,2})?$/);
@@ -27,7 +31,8 @@ const paymentStatus = z.enum(['reported', 'confirmed', 'rejected']);
 const paymentOut = z
   .object({
     id: z.string(),
-    orderId: z.string(),
+    orderId: z.string().nullable(),
+    statementId: z.string().nullable(),
     method,
     amount: money,
     currency,
@@ -70,6 +75,13 @@ const orderParam = z.object({
   id: z.string().openapi({ param: { name: 'id', in: 'path' } }),
 });
 const reviewParam = z.object({
+  id: z.string().openapi({ param: { name: 'id', in: 'path' } }),
+  paymentId: z.string().openapi({ param: { name: 'paymentId', in: 'path' } }),
+});
+const statementParam = z.object({
+  id: z.string().openapi({ param: { name: 'id', in: 'path' } }),
+});
+const statementReviewParam = z.object({
   id: z.string().openapi({ param: { name: 'id', in: 'path' } }),
   paymentId: z.string().openapi({ param: { name: 'paymentId', in: 'path' } }),
 });
@@ -248,6 +260,168 @@ export function paymentsRouter() {
         return c.json(
           {
             error: `El pedido está en "${res.current}"; no se puede revisar el pago.`,
+          },
+          400,
+        );
+      }
+      return c.json(res.payment, 200);
+    },
+  );
+
+  // ── Cobro de estados de cuenta (M7c.2, D-03) ──────────────────────────────
+
+  // Reportar el pago de un estado de cuenta (el sujeto: tienda/Mover).
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/statements/{id}/payments',
+      tags: ['payments'],
+      summary: 'Reportar el pago de un estado de cuenta',
+      request: {
+        params: statementParam,
+        body: { content: { 'application/json': { schema: reportBody } } },
+      },
+      responses: {
+        201: {
+          description: 'Pago reportado',
+          content: { 'application/json': { schema: paymentOut } },
+        },
+        400: {
+          description: 'El estado de cuenta no está para reportar pago',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        403: {
+          description: 'Solo el sujeto del estado de cuenta puede reportar',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'No existe o no es visible',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        409: {
+          description: 'Esa referencia ya fue reportada',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db, userId } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      const body = c.req.valid('json');
+
+      // Solo el sujeto del estado de cuenta reporta (403 limpio en vez de 500 RLS).
+      const statement = await getStatement(db, id);
+      if (!statement) return c.json({ error: 'No encontrado.' }, 404);
+      const isSubject =
+        statement.subjectType === 'mover'
+          ? statement.subjectId === userId
+          : await isStoreMember(db, statement.subjectId);
+      if (!isSubject) {
+        return c.json(
+          { error: 'Solo el sujeto del estado de cuenta puede reportar.' },
+          403,
+        );
+      }
+
+      const res = await reportStatementPayment(db, id, userId, body);
+      if (res.status === 'statement_not_found') {
+        return c.json({ error: 'No encontrado.' }, 404);
+      }
+      if (res.status === 'invalid_state') {
+        return c.json(
+          {
+            error: `El estado de cuenta está en "${res.current}"; no se puede reportar pago.`,
+          },
+          400,
+        );
+      }
+      if (res.status === 'duplicate_reference') {
+        return c.json({ error: 'Esa referencia ya fue reportada.' }, 409);
+      }
+      return c.json(res.payment, 201);
+    },
+  );
+
+  // Reportes de pago de un estado de cuenta (sujeto o admin; la RLS acota).
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/statements/{id}/payments',
+      tags: ['payments'],
+      summary: 'Reportes de pago de un estado de cuenta',
+      request: { params: statementParam },
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: paymentListOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      const payments = await listPaymentsForStatement(db, id);
+      return c.json({ payments }, 200);
+    },
+  );
+
+  // Confirmar o rechazar el cobro de un estado de cuenta (admin; la RLS es el candado).
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/statements/{id}/payments/{paymentId}/review',
+      tags: ['payments'],
+      summary: 'Confirmar o rechazar el cobro de un estado de cuenta',
+      request: {
+        params: statementReviewParam,
+        body: { content: { 'application/json': { schema: reviewBody } } },
+      },
+      responses: {
+        200: {
+          description: 'Cobro revisado',
+          content: { 'application/json': { schema: paymentOut } },
+        },
+        400: {
+          description: 'El estado de cuenta no está para revisar el cobro',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'No existe o no podés revisarlo',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db, userId } = sessionCtx(c);
+      const { id, paymentId } = c.req.valid('param');
+      const { decision } = c.req.valid('json');
+
+      const res = await reviewStatementPayment(
+        db,
+        id,
+        paymentId,
+        userId,
+        decision,
+      );
+      if (res.status === 'not_found') {
+        return c.json({ error: 'No existe o no podés revisarlo.' }, 404);
+      }
+      if (res.status === 'invalid_state') {
+        return c.json(
+          {
+            error: `El estado de cuenta está en "${res.current}"; no se puede revisar el cobro.`,
           },
           400,
         );

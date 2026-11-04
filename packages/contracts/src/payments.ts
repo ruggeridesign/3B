@@ -18,10 +18,15 @@ const currency = z.string().regex(/^[A-Z]{3}$/);
 export const PaymentStatus = z.enum(['reported', 'confirmed', 'rejected']);
 export type PaymentStatus = z.infer<typeof PaymentStatus>;
 
-/** Un reporte de pago (comprobante) sobre un pedido. */
+/**
+ * Un reporte de pago (comprobante). Referencia polimórfica (D-03): sobre un **pedido**
+ * (`orderId`, M5c) o sobre un **estado de cuenta** (`statementId`, M7c.2) —
+ * exactamente uno no nulo.
+ */
 export const PaymentReport = z.object({
   id: z.string(),
-  orderId: z.string(),
+  orderId: z.string().nullable(),
+  statementId: z.string().nullable(),
   method: PaymentMethodType,
   amount: money,
   currency,
@@ -36,7 +41,7 @@ export const PaymentReport = z.object({
 });
 export type PaymentReport = z.infer<typeof PaymentReport>;
 
-/** Lista de reportes de pago de un pedido. */
+/** Lista de reportes de pago (de un pedido o un estado de cuenta). */
 export const PaymentReportList = z.object({
   payments: z.array(PaymentReport),
 });

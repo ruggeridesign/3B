@@ -1,5 +1,6 @@
 import type {
   FeeAccrualList,
+  PaymentReportList,
   Statement,
   StatementList,
   Subscription,
@@ -120,6 +121,40 @@ export async function getMyStatements(): Promise<StatementList | null> {
     });
     if (!res.ok) return null;
     return (await res.json()) as StatementList;
+  } catch {
+    return null;
+  }
+}
+
+/** Cobros por confirmar (estados de cuenta `pending`) visibles para mí (admin). */
+export async function getPendingCollections(): Promise<StatementList | null> {
+  const cookie = await cookieHeader();
+  if (!cookie) return null;
+  try {
+    const res = await fetch(`${API}/v1/me/collections`, {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as StatementList;
+  } catch {
+    return null;
+  }
+}
+
+/** Reportes de pago de un estado de cuenta. null si falla. */
+export async function getStatementPayments(
+  statementId: string,
+): Promise<PaymentReportList | null> {
+  const cookie = await cookieHeader();
+  if (!cookie) return null;
+  try {
+    const res = await fetch(`${API}/v1/statements/${statementId}/payments`, {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as PaymentReportList;
   } catch {
     return null;
   }
