@@ -253,6 +253,13 @@
       "when": 1793731090109,
       "tag": "0035_flashy_punisher",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1793797431130,
+      "tag": "0036_mixed_paper_doll",
+      "breakpoints": true
     }
   ]
 }

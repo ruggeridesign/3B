@@ -107,3 +107,49 @@ export const feeAccruals = billing.table(
     index('fee_accruals_community_idx').on(t.communityId),
   ],
 );
+
+/**
+ * Estado de cuenta **mensual** de un sujeto (M7c). Sujeto polimórfico (`store` en
+ * ventas + suscripción, `mover` solo comisiones). Una fila por `(subject_type,
+ * subject_id, period)` (`period` = `YYYY-MM`). La genera un **job del worker** (owner)
+ * via `billing.generate_statements(period)`: suma la cuota de suscripción del período
+ * (0 para Movers y tiendas en `trial`/`cancelled`) + las comisiones devengadas del
+ * mes. `community_id` se denormaliza para el alcance de los admins de comunidad; es
+ * NULL para Movers (su billing es de plataforma). La app solo lee; el cobro por
+ * comprobante llega en M7c.2. La RLS: la ve el sujeto o un admin.
+ */
+export const statements = billing.table(
+  'statements',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    subjectType: text('subject_type').notNull(), // store | mover
+    subjectId: uuid('subject_id').notNull(),
+    period: text('period').notNull(), // YYYY-MM
+    subscriptionAmount: numeric('subscription_amount', {
+      precision: 12,
+      scale: 2,
+    })
+      .notNull()
+      .default('0'),
+    commissionAmount: numeric('commission_amount', { precision: 12, scale: 2 })
+      .notNull()
+      .default('0'),
+    total: numeric('total', { precision: 12, scale: 2 }).notNull().default('0'),
+    currency: text('currency').notNull().default('USD'),
+    status: text('status').notNull().default('open'), // open | pending | paid
+    communityId: uuid('community_id').references(() => communities.id, {
+      onDelete: 'restrict',
+    }),
+    ...timestamps,
+  },
+  (t) => [
+    unique('statements_subject_period_unique').on(
+      t.subjectType,
+      t.subjectId,
+      t.period,
+    ),
+    index('statements_subject_idx').on(t.subjectType, t.subjectId),
+    index('statements_community_idx').on(t.communityId),
+    index('statements_status_idx').on(t.status),
+  ],
+);

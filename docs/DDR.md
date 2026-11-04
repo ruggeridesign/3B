@@ -41,15 +41,18 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
   **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
   la proyección de ranking con señales de comportamiento).
-- **En curso: M7 · Billing + panel de comunidad.** **M7a — planes + suscripciones** y
-  **M7b — comisiones devengadas** hechos (módulo `billing`): `plans` + `subscriptions`
-  (una por tienda; `trial` por trigger; la cambia un admin) y `fee_accruals`
-  (polimórfico `store`|`mover`): al `completado` devenga comisión de venta a la tienda
-  (+ `orders.fee_amount`) y al `entregado` comisión de envío al Mover (S-3), vía
-  triggers definer; la tasa es **% por env** (`COMMISSION_RATE` → `billing.config`).
-  Web: estado + comisiones en `mi-tienda` y `/mover`. **Siguiente: M7c** (estados de
-  cuenta `statements` por tienda/Mover; pago por comprobante vía `statement_id`,
-  D-03), luego **M7d** (panel de comunidad: KYC + cobros + reportes + métricas).
+- **En curso: M7 · Billing + panel de comunidad.** **M7a — planes + suscripciones**,
+  **M7b — comisiones devengadas** y **M7c.1 — estados de cuenta** hechos (módulo
+  `billing`): `plans` + `subscriptions` (una por tienda; `trial` por trigger; la cambia un
+  admin); `fee_accruals` (polimórfico `store`|`mover`): al `completado` devenga comisión
+  de venta a la tienda (+ `orders.fee_amount`) y al `entregado` comisión de envío al Mover
+  (S-3), vía triggers definer, tasa **% por env** (`COMMISSION_RATE` → `billing.config`); y
+  `statements` (polimórfico, mensual): un **job del worker** (owner) suma suscripción +
+  comisiones del período con `billing.generate_statements(period)` (upsert que solo pisa
+  filas `open`). Web: estado + comisiones + estados de cuenta en `mi-tienda` y `/mover`.
+  **Siguiente: M7c.2** (cobro por comprobante: ALTER `payment_reports` con `statement_id`,
+  D-03; `open→pending→paid`, el admin confirma), luego **M7d** (panel de comunidad: KYC +
+  cobros + reportes + métricas).
 - **M6 · Envíos y rastreo — CERRADO.** **M6a — solicitud + ofertas** y **M6b —
   asignación + PIN** (módulo `shipping`): el Seller solicita un envío para un
   pedido `delivery`; los Movers aprobados que operan en la comunidad ofertan →
@@ -205,6 +208,56 @@
   unidad lógica; cada uno con su entrada en este DDR.
 
 ---
+
+## 2026-11-04 · _(este commit)_ · feat — M7c.1: billing — estados de cuenta (`statements`)
+
+- **Qué:** tercera rebanada de **M7** (lectura). Un **job del worker** genera estados de
+  cuenta **mensuales** por sujeto (`statements`, polimórfico `store`|`mover`): suma la
+  cuota de suscripción del período (0 para Movers y tiendas en `trial`/`cancelled`) + las
+  comisiones devengadas (`fee_accruals`) del mes. Web: lista de estados de cuenta en
+  `mi-tienda` y `/mover`.
+- **Por qué:** cumple "estados de cuenta mensuales" de M7; consolida lo devengado (M7b)
+  en un documento por período, base del **cobro por comprobante** (M7c.2).
+- **Impacto / archivos:**
+  - `packages/contracts/src/billing.ts` (+exports): `StatementStatus`, `Statement`,
+    `StatementList`.
+  - `packages/db/src/schema/billing.ts` (+migración `0036_mixed_paper_doll.sql`):
+    `statements` (sujeto polimórfico; `period` `YYYY-MM`; `subscription_amount` +
+    `commission_amount` → `total`; `status` open|pending|paid; `community_id` NULL para
+    Movers; `unique(subject_type, subject_id, period)`). CHECKs + RLS/grants (solo lectura
+    para `app`; la ve el sujeto o un admin) + **función SECURITY DEFINER**
+    `billing.generate_statements(period)` (owner; agrega por sujeto con upsert que **solo
+    pisa filas `open`**; `REVOKE … FROM PUBLIC`).
+  - `packages/core/src/modules/billing/`: `infra/billing-repo.ts` (`listStatements`,
+    `getStatement`, `generateStatements`), rutas `GET /stores/{id}/statements`,
+    `GET /me/statements`, `GET /statements/{id}`; exports en `index.ts`.
+  - `packages/config/src/env.ts` (+`WORKER_STATEMENT_INTERVAL_MS`, default 6 h) +
+    `apps/worker/src/index.ts`: loop que genera el mes en curso + el anterior.
+  - `apps/web`: `lib/billing.ts` (`getStoreStatements`/`getMyStatements`, labels,
+    `formatPeriod`), componente `_components/statements.tsx`, listados en `mi-tienda` y
+    `/mover`.
+- **Decisiones de diseño:**
+  - **Generación por job owner (no por trigger):** a diferencia del devengo (M7b,
+    triggers), el estado de cuenta es un corte **temporal** (mensual) → lo corre el worker
+    con la conexión owner. Idempotente: el upsert solo **refresca filas `open`** (no pisa
+    `pending`/`paid`). El worker regenera el mes en curso (lo mantiene al día) y el
+    anterior (lo finaliza).
+  - **`community_id` NULL para Movers:** el billing de Movers es de **plataforma** (un
+    Mover opera en varias comunidades); su estado de cuenta solo lo ve el Mover o un admin
+    de plataforma. El de tienda lleva su `community_id` (lo ve el admin de comunidad).
+  - **`statements` polimórfico (coherente con `fee_accruals`):** mismo `subject_type`/
+    `subject_id`; el total de tienda incluye suscripción, el de Mover solo comisiones.
+- **Verificación:** `pnpm check` **verde** (lint, typecheck, unit 19/19, boundaries
+  **419 módulos**). `pnpm test:integration`: db 6/6 + **core 126/126** (+2 de M7c.1:
+  generación + RLS del estado de cuenta de tienda (tercero no ve, admin sí) y de Mover
+  (sin suscripción, sin comunidad; tienda ajena no ve)).
+- **Estado para retomar:** **M7c.2 — cobro por comprobante** (D-03): ALTER
+  `payment_reports` (`order_id` nullable + `statement_id` + CHECK exactamente uno), reusar
+  el flujo de M5c para reportar el pago de un estado de cuenta (`open→pending`) y que el
+  **admin confirme el cobro** (`pending→paid`). Luego **M7d** panel de comunidad (KYC +
+  cobros + reportes + métricas).
+- **Relacionado:** ROADMAP M7, `data-model.md` §2.5 (statements), §9 (D-03); entradas de
+  M7a/M7b.
 
 ## 2026-11-03 · _(este commit)_ · feat — M7b: billing — comisiones devengadas (`fee_accruals`)
 

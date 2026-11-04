@@ -93,3 +93,36 @@ export const FeeAccrualList = z.object({
   currency,
 });
 export type FeeAccrualList = z.infer<typeof FeeAccrualList>;
+
+/**
+ * Estado de un estado de cuenta (M7c). `open`: generado, por cobrar; `pending`:
+ * con pago reportado (comprobante), a la espera de confirmación del admin (M7c.2);
+ * `paid`: cobro confirmado.
+ */
+export const StatementStatus = z.enum(['open', 'pending', 'paid']);
+export type StatementStatus = z.infer<typeof StatementStatus>;
+
+/**
+ * Estado de cuenta **mensual** de un sujeto (tienda o Mover). Lo genera un job del
+ * worker sumando la cuota de suscripción del período (0 para Movers y tiendas en
+ * `trial`) más las comisiones devengadas (`fee_accruals`) del mes. `period` es
+ * `YYYY-MM`. `communityId` es null para Movers (billing de Movers = plataforma).
+ */
+export const Statement = z.object({
+  id: z.string(),
+  subjectType: FeeSubjectType,
+  subjectId: z.string(),
+  period: z.string().regex(/^\d{4}-\d{2}$/),
+  subscriptionAmount: money,
+  commissionAmount: money,
+  total: money,
+  currency,
+  status: StatementStatus,
+  communityId: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type Statement = z.infer<typeof Statement>;
+
+/** Estados de cuenta de un sujeto (más recientes primero). */
+export const StatementList = z.object({ statements: z.array(Statement) });
+export type StatementList = z.infer<typeof StatementList>;

@@ -1,4 +1,9 @@
-import type { FeeAccrualList, Subscription } from '@3b/contracts';
+import type {
+  FeeAccrualList,
+  Statement,
+  StatementList,
+  Subscription,
+} from '@3b/contracts';
 import { cookies } from 'next/headers';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787';
@@ -15,6 +20,24 @@ export const SUBSCRIPTION_STATUS_LABEL: Record<Subscription['status'], string> =
     past_due: 'Vencida',
     cancelled: 'Cancelada',
   };
+
+/** Etiqueta legible del estado de un estado de cuenta. */
+export const STATEMENT_STATUS_LABEL: Record<Statement['status'], string> = {
+  open: 'Por cobrar',
+  pending: 'Pago reportado',
+  paid: 'Cobrado',
+};
+
+/** Convierte `YYYY-MM` en un rótulo legible (ej. "octubre 2026"). */
+export function formatPeriod(period: string): string {
+  const [y, m] = period.split('-').map(Number);
+  if (!y || !m) return period;
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('es', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
 
 /** Comisiones devengadas de una tienda (equipo o admin). null si falla. */
 export async function getStoreFeeAccruals(
@@ -63,6 +86,40 @@ export async function getSubscription(
     });
     if (!res.ok) return null;
     return (await res.json()) as Subscription;
+  } catch {
+    return null;
+  }
+}
+
+/** Estados de cuenta de una tienda (equipo o admin). null si falla. */
+export async function getStoreStatements(
+  storeId: string,
+): Promise<StatementList | null> {
+  const cookie = await cookieHeader();
+  if (!cookie) return null;
+  try {
+    const res = await fetch(`${API}/v1/stores/${storeId}/statements`, {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as StatementList;
+  } catch {
+    return null;
+  }
+}
+
+/** Mis estados de cuenta como Mover. null si falla. */
+export async function getMyStatements(): Promise<StatementList | null> {
+  const cookie = await cookieHeader();
+  if (!cookie) return null;
+  try {
+    const res = await fetch(`${API}/v1/me/statements`, {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as StatementList;
   } catch {
     return null;
   }

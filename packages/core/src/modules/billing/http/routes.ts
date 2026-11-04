@@ -1,9 +1,11 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import { type ApiVariables, requireSession, sessionCtx } from '../../../http';
 import {
+  getStatement,
   getSubscription,
   listFeeAccruals,
   listPlans,
+  listStatements,
   setSubscription,
 } from '../infra/billing-repo';
 
@@ -65,6 +67,28 @@ const feeOut = z
 const feeListOut = z
   .object({ accruals: z.array(feeOut), total: money, currency })
   .openapi('FeeAccrualList');
+
+const statementStatus = z.enum(['open', 'pending', 'paid']);
+
+const statementOut = z
+  .object({
+    id: z.string(),
+    subjectType: z.enum(['store', 'mover']),
+    subjectId: z.string(),
+    period: z.string(),
+    subscriptionAmount: money,
+    commissionAmount: money,
+    total: money,
+    currency,
+    status: statementStatus,
+    communityId: z.string().nullable(),
+    createdAt: z.string(),
+  })
+  .openapi('Statement');
+
+const statementListOut = z
+  .object({ statements: z.array(statementOut) })
+  .openapi('StatementList');
 
 const errorSchema = z.object({ error: z.string() }).openapi('BillingError');
 
@@ -232,6 +256,90 @@ export function billingRouter() {
       const { db, userId } = sessionCtx(c);
       const fees = await listFeeAccruals(db, 'mover', userId);
       return c.json(fees, 200);
+    },
+  );
+
+  // Estados de cuenta de una tienda (equipo o admin).
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/stores/{id}/statements',
+      tags: ['billing'],
+      summary: 'Estados de cuenta de la tienda',
+      request: { params: storeParam },
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: statementListOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      const list = await listStatements(db, 'store', id);
+      return c.json(list, 200);
+    },
+  );
+
+  // Mis estados de cuenta como Mover.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/me/statements',
+      tags: ['billing'],
+      summary: 'Mis estados de cuenta (Mover)',
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: statementListOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db, userId } = sessionCtx(c);
+      const list = await listStatements(db, 'mover', userId);
+      return c.json(list, 200);
+    },
+  );
+
+  // Un estado de cuenta por id (la RLS acota la visibilidad).
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/statements/{id}',
+      tags: ['billing'],
+      summary: 'Estado de cuenta por id',
+      request: { params: storeParam },
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: statementOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        404: {
+          description: 'No existe o no es visible',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db } = sessionCtx(c);
+      const { id } = c.req.valid('param');
+      const statement = await getStatement(db, id);
+      if (!statement) return c.json({ error: 'No encontrado.' }, 404);
+      return c.json(statement, 200);
     },
   );
 

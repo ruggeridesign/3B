@@ -1,9 +1,10 @@
 import { redirect } from 'next/navigation';
-import { getMyFeeAccruals } from '../../../lib/billing';
+import { getMyFeeAccruals, getMyStatements } from '../../../lib/billing';
 import { getMe } from '../../../lib/me';
 import { getAssignedShipments, getOpenShipments } from '../../../lib/shipping';
 import { MoverQueue } from '../../_components/mover-queue';
 import { MoverTrip } from '../../_components/mover-trip';
+import { Statements } from '../../_components/statements';
 
 /**
  * Área del Mover. **M6a/M6b**: cola de solicitudes abiertas en sus comunidades
@@ -16,10 +17,11 @@ export default async function Mover() {
     redirect('/');
   }
 
-  const [open, assigned, fees] = await Promise.all([
+  const [open, assigned, fees, statements] = await Promise.all([
     getOpenShipments(),
     getAssignedShipments(),
     getMyFeeAccruals(),
+    getMyStatements(),
   ]);
   const activeTrips = assigned.filter(
     (s) => s.status !== 'entregado' && s.status !== 'fallido',
@@ -53,6 +55,8 @@ export default async function Mover() {
         </h2>
         <MoverQueue shipments={open} />
       </section>
+
+      {statements && <Statements statements={statements.statements} />}
     </div>
   );
 }

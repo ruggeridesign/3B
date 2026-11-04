@@ -23,6 +23,13 @@ const envSchema = z.object({
   // Intervalos del worker (ms): barrido de reservas vencidas y drenado del outbox.
   WORKER_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
   WORKER_OUTBOX_INTERVAL_MS: z.coerce.number().int().positive().default(2_000),
+  // Generación de estados de cuenta (billing, M7c): refresca el estado del mes en
+  // curso y finaliza el anterior. Default 6 h (no hace falta más frecuente).
+  WORKER_STATEMENT_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(21_600_000),
   // Comisión de plataforma (fracción, 0..1) sobre ventas y envíos (billing, M7b).
   // El seed la carga en `billing.config`; los triggers de devengo la leen de ahí.
   COMMISSION_RATE: z.coerce.number().min(0).max(1).default(0.05),

@@ -4,9 +4,19 @@ import type {
   FeeSubjectType,
   Plan,
   SetSubscriptionInput,
+  Statement,
+  StatementList,
   Subscription,
 } from '@3b/contracts';
-import { type AppTransaction, and, desc, eq, schema } from '@3b/db';
+import {
+  type AppDatabase,
+  type AppTransaction,
+  and,
+  desc,
+  eq,
+  schema,
+  sql,
+} from '@3b/db';
 
 type PlanRow = typeof schema.plans.$inferSelect;
 type SubRow = typeof schema.subscriptions.$inferSelect;
@@ -148,4 +158,73 @@ export async function listFeeAccruals(
     total: (cents / 100).toFixed(2),
     currency,
   };
+}
+
+type StatementRow = typeof schema.statements.$inferSelect;
+
+function toStatement(row: StatementRow): Statement {
+  return {
+    id: row.id,
+    subjectType: row.subjectType as Statement['subjectType'],
+    subjectId: row.subjectId,
+    period: row.period,
+    subscriptionAmount: row.subscriptionAmount,
+    commissionAmount: row.commissionAmount,
+    total: row.total,
+    currency: row.currency,
+    status: row.status as Statement['status'],
+    communityId: row.communityId,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+/**
+ * Estados de cuenta de un sujeto (tienda o Mover), más recientes primero. La RLS
+ * acota la visibilidad (el sujeto o un admin).
+ */
+export async function listStatements(
+  db: AppTransaction,
+  subjectType: FeeSubjectType,
+  subjectId: string,
+): Promise<StatementList> {
+  const rows = await db
+    .select()
+    .from(schema.statements)
+    .where(
+      and(
+        eq(schema.statements.subjectType, subjectType),
+        eq(schema.statements.subjectId, subjectId),
+      ),
+    )
+    .orderBy(desc(schema.statements.period));
+  return { statements: rows.map(toStatement) };
+}
+
+/** Un estado de cuenta por id (o null si no es visible bajo RLS). */
+export async function getStatement(
+  db: AppTransaction,
+  id: string,
+): Promise<Statement | null> {
+  const [row] = await db
+    .select()
+    .from(schema.statements)
+    .where(eq(schema.statements.id, id))
+    .limit(1);
+  return row ? toStatement(row) : null;
+}
+
+/**
+ * Genera/actualiza los estados de cuenta de un período (`YYYY-MM`). **Job de
+ * sistema**: corre con la conexión **owner** (el worker), delega la agregación a la
+ * función SQL `billing.generate_statements` (SECURITY DEFINER). Idempotente: solo
+ * refresca los estados `open` del período. Devuelve cuántos sujetos procesó.
+ */
+export async function generateStatements(
+  db: AppDatabase,
+  period: string,
+): Promise<number> {
+  const rows = (await db.execute(
+    sql`SELECT billing.generate_statements(${period}) AS count`,
+  )) as unknown as Array<{ count: number }>;
+  return Number(rows[0]?.count ?? 0);
 }

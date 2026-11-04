@@ -7,6 +7,9 @@ export {
   PlanCode,
   PlanList,
   SetSubscriptionInput,
+  Statement,
+  StatementList,
+  StatementStatus,
   Subscription,
   SubscriptionStatus,
 } from './billing';

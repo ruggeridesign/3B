@@ -1,17 +1,27 @@
 import { loadEnv } from '@3b/config';
+import { generateStatements } from '@3b/core/modules/billing';
 import { sweepExpiredReservations } from '@3b/core/modules/inventory';
 import { drainOutbox, type OutboxEvent } from '@3b/core/modules/platform';
 import { createAppDb } from '@3b/db';
 import Redis from 'ioredis';
 
 /**
- * Worker de 3B. Dos trabajos periódicos, ambos **jobs de sistema** (sin contexto
+ * Worker de 3B. Trabajos periódicos, todos **jobs de sistema** (sin contexto
  * de usuario), por eso usan la conexión **owner**:
  *  - **Vencimiento de reservas (I-5):** barre las reservas `active` con
  *    `expires_at` vencido, las libera y deja `stock.changed` en el outbox.
  *  - **Publisher del outbox:** drena `platform.outbox` y publica cada evento en
  *    Valkey (pub/sub), marcándolos como publicados (at-least-once).
+ *  - **Estados de cuenta (M7c):** genera/actualiza los `statements` del mes en
+ *    curso y del anterior (suscripción + comisiones del período).
  */
+
+/** Período `YYYY-MM` (UTC) de una fecha. */
+function periodOf(d: Date): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
 
 const env = loadEnv();
 const { db, client } = createAppDb(env.DATABASE_URL);
@@ -43,7 +53,7 @@ function loop(fn: () => Promise<void>, intervalMs: number): () => void {
   };
 }
 
-console.log('[worker] arrancando (sweep + outbox→valkey)…');
+console.log('[worker] arrancando (sweep + outbox→valkey + statements)…');
 
 const stopSweep = loop(async () => {
   const res = await sweepExpiredReservations(db);
@@ -57,10 +67,24 @@ const stopDrain = loop(async () => {
   if (n > 0) console.log(`[worker] eventos publicados: ${n}`);
 }, env.WORKER_OUTBOX_INTERVAL_MS);
 
+const stopStatements = loop(async () => {
+  const now = new Date();
+  const prev = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1),
+  );
+  // Mes anterior (finaliza el cierre) + mes en curso (mantiene el estado al día).
+  const a = await generateStatements(db, periodOf(prev));
+  const b = await generateStatements(db, periodOf(now));
+  if (a + b > 0) {
+    console.log(`[worker] estados de cuenta generados/actualizados: ${a + b}`);
+  }
+}, env.WORKER_STATEMENT_INTERVAL_MS);
+
 async function shutdown(signal: string): Promise<void> {
   console.log(`[worker] ${signal} → cerrando…`);
   stopSweep();
   stopDrain();
+  stopStatements();
   valkey.disconnect();
   await client.end();
   process.exit(0);

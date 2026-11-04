@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import {
   getStoreFeeAccruals,
+  getStoreStatements,
   getSubscription,
   SUBSCRIPTION_STATUS_LABEL,
 } from '../../../../lib/billing';
@@ -21,6 +22,7 @@ import {
   getStoreKyc,
   getStoreMembers,
 } from '../../../../lib/stores';
+import { Statements } from '../../../_components/statements';
 import { StoreAttributes } from '../../../_components/store-attributes';
 import { StoreCatalog } from '../../../_components/store-catalog';
 import { StoreCollections } from '../../../_components/store-collections';
@@ -87,6 +89,7 @@ export default async function StoreDetail({
   ]);
   const subscription = await getSubscription(id);
   const fees = canManage ? await getStoreFeeAccruals(id) : null;
+  const statements = canManage ? await getStoreStatements(id) : null;
 
   return (
     <div className="space-y-6">
@@ -129,6 +132,8 @@ export default async function StoreDetail({
       </div>
 
       <StoreOrders orders={orders} />
+
+      {statements && <Statements statements={statements.statements} />}
 
       <StoreKyc
         storeId={store.id}
