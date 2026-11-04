@@ -105,6 +105,11 @@ export function Navbar({ me }: { me: MeResponse }) {
                 {me.capabilities.isSeller ? 'Mi Tienda' : 'Abrir una tienda'}
               </Link>
             </DropdownMenuItem>
+            {!me.capabilities.isMover && (
+              <DropdownMenuItem asChild>
+                <Link href="/mover">Convertite en Mover</Link>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onLogout}>
               Cerrar sesión

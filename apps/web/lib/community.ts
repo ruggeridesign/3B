@@ -7,6 +7,23 @@ async function cookieHeader(): Promise<string> {
   return (await cookies()).toString();
 }
 
+/** Mis solicitudes de Mover (verificaciones de sujeto `mover`). [] si falla. */
+export async function getMyMoverApplications(): Promise<KycSubmission[]> {
+  const cookie = await cookieHeader();
+  if (!cookie) return [];
+  try {
+    const res = await fetch(`${API}/v1/me/mover/applications`, {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { submissions: KycSubmission[] };
+    return data.submissions;
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Cola de verificaciones (KYC) `pending` de las tiendas de una comunidad, para el
  * admin de esa comunidad (M7d). La RLS es el candado: solo el admin de la comunidad

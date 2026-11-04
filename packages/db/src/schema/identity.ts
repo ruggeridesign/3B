@@ -63,6 +63,9 @@ export const kycSubmissions = identity.table(
     docType: text('doc_type').notNull(), // rif | cedula | pasaporte | other
     mediaId: uuid('media_id'), // FK a media.media (ON DELETE SET NULL, en migración)
     status: text('status').notNull().default('pending'), // pending | approved | rejected
+    // Comunidad objetivo (FK blanda a community.communities en la migración). Para
+    // `mover` es donde solicita operar (gatea al revisor); para `store` es null.
+    communityId: uuid('community_id'),
     reviewerId: uuid('reviewer_id').references(() => users.id, {
       onDelete: 'set null',
     }),
@@ -74,6 +77,7 @@ export const kycSubmissions = identity.table(
   (t) => [
     index('kyc_subject_idx').on(t.subjectType, t.subjectId),
     index('kyc_status_idx').on(t.status),
+    index('kyc_community_idx').on(t.communityId),
   ],
 );
 

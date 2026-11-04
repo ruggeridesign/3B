@@ -101,6 +101,9 @@ export const KycSubmission = z.object({
   // Documento subido (media, polimórfica). Puede faltar hasta adjuntarlo.
   mediaId: z.string().nullable(),
   status: KycStatus,
+  // Comunidad a la que apunta la verificación. Para `mover` es la comunidad donde
+  // solicita operar (gatea al revisor); para `store` es null (se deriva de la tienda).
+  communityId: z.string().nullable(),
   reviewerId: z.string().nullable(),
   reviewNotes: z.string().nullable(),
   expiresAt: z.string().nullable(),
@@ -133,3 +136,26 @@ export const ReviewKycInput = z.object({
   notes: z.string().max(2000).nullable().optional(),
 });
 export type ReviewKycInput = z.infer<typeof ReviewKycInput>;
+
+/** Estado del perfil de Mover (capacidad de repartidor). */
+export const MoverStatus = z.enum(['pending', 'approved', 'suspended']);
+export type MoverStatus = z.infer<typeof MoverStatus>;
+
+/**
+ * Un usuario se postula como **Mover** en una comunidad (M7d.2). Crea/reusa su perfil
+ * (`pending`) y envía una verificación (KYC de sujeto `mover`) a esa comunidad; el admin
+ * la aprueba (→ `approved`, suma la comunidad a `operating_communities`) o la rechaza.
+ */
+export const ApplyMoverInput = z.object({
+  communityId: z
+    .string()
+    .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
+  docType: KycDocType,
+  mediaId: z
+    .string()
+    .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+    .nullable()
+    .optional(),
+  expiresAt: z.string().datetime().nullable().optional(),
+});
+export type ApplyMoverInput = z.infer<typeof ApplyMoverInput>;

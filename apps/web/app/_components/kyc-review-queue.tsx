@@ -21,17 +21,17 @@ function fmt(iso: string): string {
   });
 }
 
-/** Una verificación de la cola + el nombre de su tienda (resuelto en el server). */
+/** Una verificación de la cola + su rótulo (nombre de tienda o "Mover"). */
 export type KycReviewItem = {
   submission: KycSubmission;
-  storeName: string;
+  label: string;
 };
 
 /**
- * Cola de verificaciones (KYC) de tienda del admin de comunidad (M7d). Aprueba o
- * rechaza (`POST /v1/kyc/{id}/review`); al aprobar, el trigger sube el
- * `verification_level` de la tienda. La RLS acota la revisión al admin de la
- * comunidad del sujeto.
+ * Cola de verificaciones (KYC) del admin de comunidad (M7d): de **tienda** (sube el
+ * `verification_level`) y de **Mover** (al aprobar, el solicitante pasa a ser Mover).
+ * Aprueba o rechaza (`POST /v1/kyc/{id}/review`); la RLS acota la revisión al admin de
+ * la comunidad del sujeto.
  */
 export function KycReviewQueue({ items }: { items: KycReviewItem[] }) {
   const router = useRouter();
@@ -68,14 +68,14 @@ export function KycReviewQueue({ items }: { items: KycReviewItem[] }) {
   return (
     <div className="space-y-2">
       <ul className="space-y-2">
-        {items.map(({ submission: s, storeName }) => (
+        {items.map(({ submission: s, label }) => (
           <li
             key={s.id}
             className="glass flex flex-wrap items-center justify-between gap-2 rounded-lg p-3"
           >
             <div className="min-w-0">
               <p className="text-foreground text-sm">
-                <span className="font-medium">{storeName}</span>
+                <span className="font-medium">{label}</span>
                 <span className="ml-2 rounded-md bg-seller/20 px-1.5 py-0.5 text-xs">
                   {DOC_LABEL[s.docType]}
                 </span>

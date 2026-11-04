@@ -7,8 +7,10 @@ import {
   sessionCtx,
 } from '../../../http';
 import {
+  applyAsMover,
   createSubmission,
   getReviewCommunity,
+  listMyMoverApplications,
   listPendingByCommunity,
   listSubmissionsBySubject,
   reviewSubmission,
@@ -29,6 +31,7 @@ const submissionOut = z
     docType,
     mediaId: z.string().nullable(),
     status: kycStatus,
+    communityId: z.string().nullable(),
     reviewerId: z.string().nullable(),
     reviewNotes: z.string().nullable(),
     expiresAt: z.string().nullable(),
@@ -55,6 +58,15 @@ const reviewBody = z
     notes: z.string().max(2000).nullable().optional(),
   })
   .openapi('ReviewKyc');
+
+const applyMoverBody = z
+  .object({
+    communityId: uuid,
+    docType,
+    mediaId: uuid.nullable().optional(),
+    expiresAt: z.string().datetime().nullable().optional(),
+  })
+  .openapi('ApplyMover');
 
 const errorSchema = z.object({ error: z.string() }).openapi('KycError');
 
@@ -239,6 +251,71 @@ export function kycRouter() {
         return c.json({ error: 'No existe esa verificación.' }, 404);
       }
       return c.json(submission, 200);
+    },
+  );
+
+  // Postularse como Mover en una comunidad (el propio usuario). Crea el perfil
+  // `pending` + una verificación de Mover a esa comunidad; el admin la revisa.
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/me/mover/applications',
+      tags: ['identity'],
+      summary: 'Postularse como Mover en una comunidad',
+      request: {
+        body: { content: { 'application/json': { schema: applyMoverBody } } },
+      },
+      responses: {
+        201: {
+          description: 'Solicitud enviada',
+          content: { 'application/json': { schema: submissionOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+        409: {
+          description: 'Ya tenés una solicitud pendiente en esa comunidad',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db, userId } = sessionCtx(c);
+      const body = c.req.valid('json');
+      const res = await applyAsMover(db, userId, body);
+      if (res.status === 'already_pending') {
+        return c.json(
+          { error: 'Ya tenés una solicitud pendiente en esa comunidad.' },
+          409,
+        );
+      }
+      return c.json(res.submission, 201);
+    },
+  );
+
+  // Mis solicitudes de Mover (el propio usuario).
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/me/mover/applications',
+      tags: ['identity'],
+      summary: 'Mis solicitudes de Mover',
+      responses: {
+        200: {
+          description: 'OK',
+          content: { 'application/json': { schema: submissionListOut } },
+        },
+        401: {
+          description: 'No autenticado',
+          content: { 'application/json': { schema: errorSchema } },
+        },
+      },
+    }),
+    async (c) => {
+      const { db, userId } = sessionCtx(c);
+      const submissions = await listMyMoverApplications(db, userId);
+      return c.json({ submissions }, 200);
     },
   );
 

@@ -62,6 +62,7 @@ export {
   UpsertServiceDetailInput,
 } from './catalog';
 export {
+  ApplyMoverInput,
   Capabilities,
   CommunityRole,
   CreateKycSubmissionInput,
@@ -75,6 +76,7 @@ export {
   MembershipStatus,
   MeResponse,
   MeStore,
+  MoverStatus,
   ReviewKycInput,
   StoreRole,
 } from './identity';

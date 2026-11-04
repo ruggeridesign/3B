@@ -54,12 +54,13 @@
   (reusando `payment_reports` con `statement_id`) → `pending`, y un admin confirma
   (`paid`) o rechaza (`open`), vía triggers definer. Web: suscripción + comisiones +
   estados de cuenta + reportar pago en `mi-tienda`/`/mover`; "Cobros por confirmar" en
-  `/admin`. **M7d en curso: M7d.1 — panel de comunidad** hecho: página `/comunidad` para
-  admins de comunidad (link en navbar) que reúne verificaciones de tienda (KYC), cobros por
-  confirmar y reportes, acotado por RLS a su comunidad (reusa el backend existente).
-  **Siguiente: M7d.2** (KYC + aprobación de Movers: RLS/rutas para sujeto `mover`,
-  derivación de comunidad por `operating_communities`, trigger que pone `isMover`), luego
-  **M7d.3** (métricas de comunidad).
+  `/admin`. **M7d en curso: M7d.1 (panel de comunidad) y M7d.2 (KYC + aprobación de Movers)
+  hechos.** `/comunidad` para admins de comunidad (link en navbar) reúne verificaciones de
+  tienda **y de Mover** (KYC), cobros por confirmar y reportes, acotado por RLS a su
+  comunidad. Un usuario se postula como Mover en una comunidad (`/mover` → KYC de sujeto
+  `mover` con `community_id`); al aprobar, el trigger pone `mover_profiles.status='approved'`
+  + suma la comunidad a `operating_communities` (queda `isMover`). **Siguiente: M7d.3**
+  (métricas de comunidad: conteos de tiendas, Movers, pedidos, GMV, cobros, reportes).
 - **M6 · Envíos y rastreo — CERRADO.** **M6a — solicitud + ofertas** y **M6b —
   asignación + PIN** (módulo `shipping`): el Seller solicita un envío para un
   pedido `delivery`; los Movers aprobados que operan en la comunidad ofertan →
@@ -215,6 +216,49 @@
   unidad lógica; cada uno con su entrada en este DDR.
 
 ---
+
+## 2026-11-04 · _(este commit)_ · feat — M7d.2: KYC + aprobación de Movers
+
+- **Qué:** un usuario se postula como **Mover** en una comunidad
+  (`POST /me/mover/applications`): crea su perfil `pending` y envía una verificación (KYC de
+  sujeto `mover`) a esa comunidad. El admin de la comunidad la ve en su cola y la aprueba → el
+  perfil pasa a `approved` + la comunidad se suma a `operating_communities` (el usuario queda
+  `isMover`), vía el trigger de KYC. Web: postulación en `/mover` (para no-Movers) + la cola de
+  `/comunidad` ahora muestra Movers.
+- **Por qué:** faltaba el alta/aprobación de Movers (hasta ahora Pedro era Mover solo por seed;
+  `isMover` no se podía obtener por la app). Completa la verificación de Movers de M7d.
+- **Impacto / archivos:**
+  - `packages/contracts/src/identity.ts` (+exports): `KycSubmission.communityId`, `MoverStatus`,
+    `ApplyMoverInput`.
+  - `packages/db/src/schema/identity.ts` (+migración `0038_slim_onslaught.sql`):
+    `kyc_submissions.community_id` (FK blanda a community + índice). RLS del caso `mover`
+    (select/insert/update: el Mover crea/ve lo suyo, el admin de la comunidad objetivo revisa) +
+    **trigger `tg_kyc_apply_verification` extendido**: al aprobar un KYC de Mover hace upsert de
+    `mover_profiles` (`approved` + `array_append` de la comunidad, dedupe).
+  - `packages/core/src/modules/identity/`: `applyAsMover` (perfil `pending` + submission),
+    `listMyMoverApplications`, `listPendingByCommunity` (tiendas **+ Movers**),
+    `getReviewCommunity` (mover → `kyc.community_id`), `createSubmission(+communityId)`; rutas
+    `POST`/`GET /me/mover/applications`.
+  - `apps/web`: `lib/community.ts` (`getMyMoverApplications`), `MoverApply` (postulación en
+    `/mover` para no-Movers), navbar ("Convertite en Mover"), `/comunidad` + `KycReviewQueue`
+    muestran Movers.
+- **Decisiones de diseño:**
+  - **Comunidad objetivo en la verificación (no en el perfil):** el Mover opera en varias
+    comunidades; cada postulación apunta a una (`kyc.community_id`), lo que gatea al revisor
+    (admin de ESA comunidad) y al aprobar suma esa comunidad a `operating_communities`.
+  - **Aprobación por trigger definer:** la app no hace UPDATE de `mover_profiles` (sigue
+    platform-only por RLS); el trigger de KYC (SECURITY DEFINER) hace el upsert al aprobar.
+    Rechazar deja el perfil `pending` (reintento).
+  - **RLS aditiva por sujeto:** las policies de `mover` se suman (OR) a las de `store` de M2;
+    `community_id` es NULL para store y seteado para mover.
+- **Verificación:** `pnpm check` **verde** (lint, typecheck, unit 19/19, boundaries **427
+  módulos**). `pnpm test:integration`: db 6/6 + **core 128/128** (+1 de M7d.2: MARTA se postula
+  en Coro, segunda postulación `already_pending`, ANA la ve en la cola y la aprueba → MARTA
+  `isMover` + Coro en operating_communities; RLS: el postulante no se auto-aprueba).
+- **Estado para retomar:** **M7d.3 — métricas de comunidad** (endpoint + tablero: conteos de
+  tiendas, Movers, pedidos, GMV, cobros, reportes por comunidad). Mejora futura: preview del
+  documento KYC en la cola (la policy `media_select_kyc` ya le da acceso al revisor).
+- **Relacionado:** ROADMAP M7; entradas de M7d.1, M2 (KYC tienda), M6 (operating_communities).
 
 ## 2026-11-04 · _(este commit)_ · feat — M7d.1: panel de comunidad (shell + colas RLS-scoped)
 

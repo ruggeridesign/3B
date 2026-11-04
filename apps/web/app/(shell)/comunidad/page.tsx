@@ -33,14 +33,17 @@ export default async function Comunidad() {
     redirect('/');
   }
 
-  // Cola de verificaciones por comunidad (con el nombre de la tienda resuelto).
+  // Cola de verificaciones por comunidad: tiendas (nombre resuelto) y Movers.
   const kycByCommunity = await Promise.all(
     adminCommunities.map(async (community) => {
       const submissions = await getCommunityKyc(community.id);
       const items: KycReviewItem[] = await Promise.all(
         submissions.map(async (submission) => {
+          if (submission.subjectType === 'mover') {
+            return { submission, label: 'Solicitud de Mover' };
+          }
           const store = await getStore(submission.subjectId);
-          return { submission, storeName: store?.name ?? 'Tienda' };
+          return { submission, label: store?.name ?? 'Tienda' };
         }),
       );
       return { community, items };

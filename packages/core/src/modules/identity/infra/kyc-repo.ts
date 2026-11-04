@@ -1,5 +1,9 @@
-import type { CreateKycSubmissionInput, KycSubmission } from '@3b/contracts';
-import { type AppTransaction, and, eq, schema } from '@3b/db';
+import type {
+  ApplyMoverInput,
+  CreateKycSubmissionInput,
+  KycSubmission,
+} from '@3b/contracts';
+import { type AppTransaction, and, desc, eq, schema } from '@3b/db';
 
 type KycRow = typeof schema.kycSubmissions.$inferSelect;
 
@@ -11,6 +15,7 @@ function toSubmission(row: KycRow): KycSubmission {
     docType: row.docType as KycSubmission['docType'],
     mediaId: row.mediaId,
     status: row.status as KycSubmission['status'],
+    communityId: row.communityId,
     reviewerId: row.reviewerId,
     reviewNotes: row.reviewNotes,
     expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
@@ -25,6 +30,7 @@ export async function createSubmission(
   input: {
     subjectType: KycSubmission['subjectType'];
     subjectId: string;
+    communityId?: string | null;
   } & CreateKycSubmissionInput,
 ): Promise<KycSubmission> {
   const [row] = await db
@@ -34,10 +40,60 @@ export async function createSubmission(
       subjectId: input.subjectId,
       docType: input.docType,
       mediaId: input.mediaId ?? null,
+      communityId: input.communityId ?? null,
       expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
     })
     .returning();
   return toSubmission(row);
+}
+
+/** Resultado de postularse como Mover (para mapear a HTTP sin 500). */
+export type ApplyMoverResult =
+  | { status: 'ok'; submission: KycSubmission }
+  | { status: 'already_pending' };
+
+/**
+ * Un usuario se postula como **Mover** en una comunidad (M7d.2). Crea su perfil de
+ * Mover `pending` si aún no existe (sin pisar uno ya `approved`) y envía una
+ * verificación (KYC de sujeto `mover`) a esa comunidad. Al aprobarla, el trigger pone
+ * el perfil `approved` y suma la comunidad a `operating_communities`. Idempotente:
+ * rechaza una segunda solicitud pendiente a la misma comunidad. La RLS acota el alta.
+ */
+export async function applyAsMover(
+  db: AppTransaction,
+  userId: string,
+  input: ApplyMoverInput,
+): Promise<ApplyMoverResult> {
+  // Perfil de Mover `pending` (no pisa uno existente: ON CONFLICT DO NOTHING).
+  await db
+    .insert(schema.moverProfiles)
+    .values({ userId, status: 'pending' })
+    .onConflictDoNothing();
+
+  // Una sola solicitud pendiente por comunidad.
+  const [dup] = await db
+    .select({ id: schema.kycSubmissions.id })
+    .from(schema.kycSubmissions)
+    .where(
+      and(
+        eq(schema.kycSubmissions.subjectType, 'mover'),
+        eq(schema.kycSubmissions.subjectId, userId),
+        eq(schema.kycSubmissions.communityId, input.communityId),
+        eq(schema.kycSubmissions.status, 'pending'),
+      ),
+    )
+    .limit(1);
+  if (dup) return { status: 'already_pending' };
+
+  const submission = await createSubmission(db, {
+    subjectType: 'mover',
+    subjectId: userId,
+    communityId: input.communityId,
+    docType: input.docType,
+    mediaId: input.mediaId,
+    expiresAt: input.expiresAt,
+  });
+  return { status: 'ok', submission };
 }
 
 /** Verificaciones de un sujeto (p. ej. una tienda). La RLS acota la visibilidad. */
@@ -60,15 +116,16 @@ export async function listSubmissionsBySubject(
 }
 
 /**
- * Cola de revisión de una comunidad: verificaciones `pending` de las tiendas de
- * esa comunidad. Join a store.stores; la RLS de ambas tablas acota (solo el admin
- * de la comunidad ve estas filas).
+ * Cola de revisión de una comunidad: verificaciones `pending` de esa comunidad —
+ * **tiendas** (comunidad vía `store.community_id`) y **Movers** (comunidad objetivo en
+ * `kyc.community_id`). La RLS acota (solo el admin de la comunidad ve estas filas).
  */
 export async function listPendingByCommunity(
   db: AppTransaction,
   communityId: string,
 ): Promise<KycSubmission[]> {
-  const rows = await db
+  // Tiendas de la comunidad (join a store.stores).
+  const storeRows = await db
     .select({ kyc: schema.kycSubmissions })
     .from(schema.kycSubmissions)
     .innerJoin(
@@ -81,9 +138,41 @@ export async function listPendingByCommunity(
         eq(schema.kycSubmissions.status, 'pending'),
         eq(schema.stores.communityId, communityId),
       ),
+    );
+
+  // Movers que solicitan operar en la comunidad (community_id directo).
+  const moverRows = await db
+    .select()
+    .from(schema.kycSubmissions)
+    .where(
+      and(
+        eq(schema.kycSubmissions.subjectType, 'mover'),
+        eq(schema.kycSubmissions.status, 'pending'),
+        eq(schema.kycSubmissions.communityId, communityId),
+      ),
+    );
+
+  return [...storeRows.map((r) => r.kyc), ...moverRows]
+    .map(toSubmission)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+/** Verificaciones de Mover del propio usuario (sus solicitudes). RLS: solo las suyas. */
+export async function listMyMoverApplications(
+  db: AppTransaction,
+  userId: string,
+): Promise<KycSubmission[]> {
+  const rows = await db
+    .select()
+    .from(schema.kycSubmissions)
+    .where(
+      and(
+        eq(schema.kycSubmissions.subjectType, 'mover'),
+        eq(schema.kycSubmissions.subjectId, userId),
+      ),
     )
-    .orderBy(schema.kycSubmissions.createdAt);
-  return rows.map((r) => toSubmission(r.kyc));
+    .orderBy(desc(schema.kycSubmissions.createdAt));
+  return rows.map(toSubmission);
 }
 
 /** Una verificación por id (o null si no existe / la RLS la oculta). */
@@ -100,29 +189,32 @@ export async function getSubmission(
 }
 
 /**
- * Resuelve la comunidad del sujeto de una verificación de tienda (para gatear al
- * revisor con `isCommunityAdmin`). null si no existe, no es de tienda, o la RLS la
- * oculta.
+ * Resuelve la comunidad de una verificación, para gatear al revisor con
+ * `isCommunityAdmin`: **tienda** → `store.community_id`; **Mover** → `kyc.community_id`
+ * (la comunidad objetivo). null si no existe o la RLS la oculta.
  */
 export async function getReviewCommunity(
   db: AppTransaction,
   id: string,
 ): Promise<string | null> {
   const [row] = await db
-    .select({ communityId: schema.stores.communityId })
+    .select({
+      subjectType: schema.kycSubmissions.subjectType,
+      subjectId: schema.kycSubmissions.subjectId,
+      communityId: schema.kycSubmissions.communityId,
+    })
     .from(schema.kycSubmissions)
-    .innerJoin(
-      schema.stores,
-      eq(schema.stores.id, schema.kycSubmissions.subjectId),
-    )
-    .where(
-      and(
-        eq(schema.kycSubmissions.id, id),
-        eq(schema.kycSubmissions.subjectType, 'store'),
-      ),
-    )
+    .where(eq(schema.kycSubmissions.id, id))
     .limit(1);
-  return row?.communityId ?? null;
+  if (!row) return null;
+  if (row.subjectType === 'mover') return row.communityId ?? null;
+
+  const [store] = await db
+    .select({ communityId: schema.stores.communityId })
+    .from(schema.stores)
+    .where(eq(schema.stores.id, row.subjectId))
+    .limit(1);
+  return store?.communityId ?? null;
 }
 
 /**
