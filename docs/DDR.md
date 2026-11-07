@@ -41,15 +41,17 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
   **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
   la proyección de ranking con señales de comportamiento).
-- **M8 · PWA — EN CURSO.** **M8a cerrado:** la web es **instalable** y abre **offline**.
-  Service worker con `@serwist/turbopack` (camino correcto para el build Turbopack de Next 16;
-  `@serwist/next`/webpack no aplica), SW en `app/sw.ts` (precache + `defaultCache` + fallback a
-  `/~offline`) servido por `app/serwist/[path]/route.ts`, `manifest.webmanifest`
-  (`app/manifest.ts`, crema `#f4f2e0`), íconos "3B" por `ImageResponse` (sin binarios; pulido en
-  M9), `viewport`/`themeColor` + meta apple y `<SerwistProvider>` (SW desactivado en dev).
-  **Siguiente: M8b** — offline resiliente (caché de GETs `/v1` + indicador de conexión). Luego
-  M8c (cola offline / Background Sync), M8d (push VAPID: tabla + API + worker + permiso), M8e
-  (presupuesto de rendimiento <170 KB JS inicial / LCP < 2,5 s).
+- **M8 · PWA — EN CURSO.** **M8a + M8b cerrados.** **M8a:** la web es **instalable** y abre
+  **offline**. Service worker con `@serwist/turbopack` (camino correcto para el build Turbopack
+  de Next 16; `@serwist/next`/webpack no aplica), SW en `app/sw.ts` servido por
+  `app/serwist/[path]/route.ts`, `manifest.webmanifest` (`app/manifest.ts`, crema `#f4f2e0`),
+  íconos "3B" por `ImageResponse` (sin binarios; pulido en M9), `viewport`/`themeColor` + meta
+  apple y `<SerwistProvider>` (SW desactivado en dev). **M8b — offline resiliente:** el SW cachea
+  los GETs de `/v1` con **NetworkFirst** (`api-v1`, timeout 3 s, solo 200, 1 día) y `/api/auth`
+  con **NetworkOnly** (nunca la sesión); `ConnectionStatus` (barra en el shell) avisa cuando se
+  cae la red. **Siguiente: M8c** — cola offline (Background Sync) para mutaciones POST/PATCH.
+  Luego M8d (push VAPID: tabla + API + worker + permiso) y M8e (presupuesto de rendimiento
+  <170 KB JS inicial / LCP < 2,5 s). Mejora futura: purgar la caché `api-v1` al cerrar sesión.
 - **M7 · Billing + panel de comunidad — CERRADO.** **M7a/M7b/M7c/M7d** completos (módulo
   `billing` + identity/comunidad). `plans` + `subscriptions` (una por tienda; `trial` por
   trigger; la cambia un admin); `fee_accruals` (polimórfico `store`|`mover`): al `completado`
@@ -222,6 +224,38 @@
   unidad lógica; cada uno con su entrada en este DDR.
 
 ---
+
+## 2026-11-07 · _(este commit)_ · feat — M8b: PWA offline resiliente (caché de /v1 + indicador de conexión)
+
+- **Qué:** el service worker ahora **cachea las lecturas del BFF** para tolerar cortes, y el
+  shell muestra un **indicador de conexión** cuando se cae la red.
+- **Por qué:** roadmap M8 (PWA tolerante a cortes). Con solo el fallback a `/~offline` (M8a), una
+  navegación sin red perdía todo; cacheando los GETs de `/v1` el usuario sigue viendo lo último
+  consultado, y el indicador explica por qué los datos pueden estar guardados.
+- **Impacto / archivos (solo `apps/web`):**
+  - `app/sw.ts`: `runtimeCaching = [...apiCache, ...defaultCache]` (gana la primera regla que
+    matchea). `apiCache`: (1) `/api/auth` → **NetworkOnly** (nunca cachear la sesión);
+    (2) GET `/v1/*` → **NetworkFirst** (`cacheName: 'api-v1'`, `networkTimeoutSeconds: 3`,
+    `CacheableResponsePlugin [200]`, `ExpirationPlugin` 128 entradas / 1 día). Las mutaciones
+    (POST/PATCH) no matchean (solo GET) → van directo a la red (su cola offline es M8c).
+  - `app/_components/connection-status.tsx` (`ConnectionStatus`): client component que escucha
+    `online`/`offline`; barra ámbar (`bg-accent`) que entra/sale con los tokens de motion
+    (grid-rows 0fr→1fr, `ease-standard`, `--duration-base`); región `aria-live` que se anuncia.
+  - `app/(shell)/layout.tsx`: monta `<ConnectionStatus />` arriba del todo.
+- **Decisiones de diseño:**
+  - **NetworkFirst (no StaleWhileRevalidate) para `/v1`:** online siempre fresco; offline cae a
+    lo último visto. El timeout de 3 s también degrada rápido en redes lentas.
+  - **NetworkOnly para `/api/auth`:** la sesión nunca debe servirse de caché.
+  - **Solo se cachea 200:** un 401 (p. ej. tras logout) no pisa el dato cacheado.
+- **Verificación:** `pnpm check` **verde** (lint sin errores, typecheck 10/10, unit 19/19,
+  boundaries 673 módulos). `next build` OK (Serwist: 30 entradas de precache; SW por esbuild).
+  Smoke en `next start`: el `/serwist/sw.js` servido contiene `api-v1`, los matchers `/v1` y
+  `/api/auth`, el fallback `/~offline` y `networkTimeout` → las reglas quedaron embebidas.
+- **Estado para retomar:** **M8b cerrado.** Siguiente: **M8c — cola offline (Background Sync)**
+  para reintentar mutaciones POST/PATCH al reconectar (Serwist exporta `BackgroundSyncQueue`).
+  Luego M8d (push VAPID) y M8e (presupuesto de rendimiento). Mejora futura: purgar la caché
+  `api-v1` al cerrar sesión (hoy una lectura vieja podría verse offline tras logout).
+- **Relacionado:** ROADMAP M8; entrada M8a; CLAUDE.md (apps/web, motion).
 
 ## 2026-11-07 · _(este commit)_ · feat — M8a: PWA instalable (Serwist/Turbopack + manifest + offline)
 

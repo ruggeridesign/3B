@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { getMe } from '../../lib/me';
 import { CartProvider } from '../_components/cart-provider';
+import { ConnectionStatus } from '../_components/connection-status';
 import { ImpersonationBanner } from '../_components/impersonation-banner';
 import { Navbar } from '../_components/navbar';
 
@@ -17,6 +18,7 @@ export default async function ShellLayout({
   return (
     <CartProvider>
       <div className="min-h-dvh">
+        <ConnectionStatus />
         {me.impersonating && (
           <ImpersonationBanner
             viewingAs={{ name: me.user.name, email: me.user.email }}
