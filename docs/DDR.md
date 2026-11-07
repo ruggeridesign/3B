@@ -41,6 +41,15 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
   **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
   la proyección de ranking con señales de comportamiento).
+- **M8 · PWA — EN CURSO.** **M8a cerrado:** la web es **instalable** y abre **offline**.
+  Service worker con `@serwist/turbopack` (camino correcto para el build Turbopack de Next 16;
+  `@serwist/next`/webpack no aplica), SW en `app/sw.ts` (precache + `defaultCache` + fallback a
+  `/~offline`) servido por `app/serwist/[path]/route.ts`, `manifest.webmanifest`
+  (`app/manifest.ts`, crema `#f4f2e0`), íconos "3B" por `ImageResponse` (sin binarios; pulido en
+  M9), `viewport`/`themeColor` + meta apple y `<SerwistProvider>` (SW desactivado en dev).
+  **Siguiente: M8b** — offline resiliente (caché de GETs `/v1` + indicador de conexión). Luego
+  M8c (cola offline / Background Sync), M8d (push VAPID: tabla + API + worker + permiso), M8e
+  (presupuesto de rendimiento <170 KB JS inicial / LCP < 2,5 s).
 - **M7 · Billing + panel de comunidad — CERRADO.** **M7a/M7b/M7c/M7d** completos (módulo
   `billing` + identity/comunidad). `plans` + `subscriptions` (una por tienda; `trial` por
   trigger; la cambia un admin); `fee_accruals` (polimórfico `store`|`mover`): al `completado`
@@ -213,6 +222,46 @@
   unidad lógica; cada uno con su entrada en este DDR.
 
 ---
+
+## 2026-11-07 · _(este commit)_ · feat — M8a: PWA instalable (Serwist/Turbopack + manifest + offline)
+
+- **Qué:** la app web es **instalable** y abre **offline**. Service worker con precache +
+  runtime caching (`@serwist/turbopack`), `manifest.webmanifest`, íconos generados por código
+  (sin binarios), `viewport`/`themeColor` + meta apple, registro del SW y página de reserva
+  `/~offline`. **Arranca M8.**
+- **Por qué:** roadmap M8 (PWA): base instalable + tolerante a cortes. Next 16 compila con
+  **Turbopack** por defecto, lo que descarta el plugin de webpack de `@serwist/next`; el camino
+  correcto es **`@serwist/turbopack`** (el SW se construye por un Route Handler con esbuild).
+- **Impacto / archivos (solo `apps/web`):**
+  - `next.config.ts`: envuelto con `withSerwist`.
+  - `app/serwist/[path]/route.ts`: `createSerwistRoute({ swSrc: 'app/sw.ts', useNativeEsbuild,
+    additionalPrecacheEntries: [/~offline] })` — sirve `/serwist/sw.js`.
+  - `app/sw.ts`: `Serwist` con `defaultCache` (de `@serwist/turbopack/worker`), `skipWaiting`,
+    `clientsClaim`, `navigationPreload` y **fallback** de documento a `/~offline`.
+  - `app/manifest.ts`: manifest (crema `#f4f2e0` fondo+tema, `display: standalone`, `lang es`).
+  - `lib/pwa-icon.tsx` + `app/icon.tsx` + `app/apple-icon.tsx` + `app/icons/[icon]/route.tsx`:
+    íconos "3B" (verde sobre crema) vía `ImageResponse` (192/512/maskable + favicon + apple).
+  - `app/layout.tsx`: `metadata.appleWebApp`, `viewport.themeColor`, y `<SerwistProvider
+    swUrl="/serwist/sw.js" disable={dev}>` (SW desactivado en dev para no chocar con el HMR).
+  - `app/~offline/page.tsx` (+ `offline-retry.tsx`): página estática fuera de `(shell)` (el
+    layout del shell hace `getMe()`/red), precacheada por el SW.
+  - deps dev: `@serwist/turbopack`, `serwist`, `esbuild`.
+- **Decisiones de diseño:**
+  - **`@serwist/turbopack` (no `@serwist/next`):** compatible con el build Turbopack de Next 16
+    (el plugin webpack de `@serwist/next` bloquea ese build). El SW se bundlea con esbuild nativo.
+  - **Íconos por código (`ImageResponse`):** sin assets binarios; re-tematizables; el pulido
+    visual real queda diferido a **M9**.
+  - **theme_color = crema:** barra del SO al tono del fondo de marca (look a sangre / glass).
+- **Verificación:** `pnpm check` **verde** (lint sin errores, typecheck 10/10, unit 19/19,
+  boundaries 672 módulos). `next build` OK (Serwist: **30 entradas de precache**; SW por
+  esbuild). Smoke en `next start`: `/manifest.webmanifest` (application/manifest+json),
+  `/serwist/sw.js` (application/javascript), `/icons/{192,512,maskable}.png` + `/apple-icon`
+  (image/png) y `/~offline` → **200**.
+- **Estado para retomar:** **M8a cerrado.** Siguiente: **M8b — offline resiliente** (caché de
+  GETs de `/v1` + indicador de conexión en el shell). Luego M8c (cola offline / Background
+  Sync), M8d (push VAPID: tabla + API + worker + permiso) y M8e (presupuesto de rendimiento).
+  Nota: el SW se verifica con `next build` (en dev está `disable`).
+- **Relacionado:** ROADMAP M8; CLAUDE.md (apps/web).
 
 ## 2026-11-04 · _(este commit)_ · feat — M7d.3: métricas de comunidad (cierra M7)
 

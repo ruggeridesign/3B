@@ -1,3 +1,4 @@
+import { withSerwist } from '@serwist/turbopack';
 import type { NextConfig } from 'next';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787';
@@ -15,4 +16,8 @@ const config: NextConfig = {
   },
 };
 
-export default config;
+// PWA (M8): Serwist para Turbopack (Next 16 compila con Turbopack por defecto, lo
+// que descarta el plugin de webpack de `@serwist/next`). El service worker se
+// construye por un Route Handler (app/serwist/[path]/route.ts) y se registra con
+// <SerwistProvider> en el layout. Ver docs/DDR.md (M8a).
+export default withSerwist(config);
