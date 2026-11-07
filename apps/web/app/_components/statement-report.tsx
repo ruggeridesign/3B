@@ -4,6 +4,7 @@ import type { PaymentMethodType } from '@3b/contracts';
 import { Button, cn, Input, Label } from '@3b/ui';
 import { useRouter } from 'next/navigation';
 import { useId, useState } from 'react';
+import { mutate } from '../../lib/mutate';
 
 const fieldClass = cn(
   'h-9 w-full rounded-md border border-input bg-field px-3 text-sm',
@@ -46,30 +47,21 @@ export function StatementReport({
     setError(null);
     const form = new FormData(e.currentTarget);
     setBusy(true);
-    try {
-      const res = await fetch(`/v1/statements/${statementId}/payments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          method: form.get('method'),
-          reference: String(form.get('reference') ?? '').trim(),
-          amount: String(form.get('amount') ?? '').trim(),
-          currency,
-        }),
-      });
-      if (res.ok) {
-        router.refresh();
-        return;
-      }
-      const data = (await res.json().catch(() => null)) as {
-        error?: string;
-      } | null;
-      setError(data?.error ?? 'No se pudo reportar el pago.');
-    } catch {
-      setError('No se pudo reportar el pago.');
-    } finally {
-      setBusy(false);
+    const outcome = await mutate(`/v1/statements/${statementId}/payments`, {
+      method: 'POST',
+      body: {
+        method: form.get('method'),
+        reference: String(form.get('reference') ?? '').trim(),
+        amount: String(form.get('amount') ?? '').trim(),
+        currency,
+      },
+    });
+    setBusy(false);
+    if (outcome.status === 'error') {
+      setError(outcome.message);
+      return;
     }
+    router.refresh();
   }
 
   return (

@@ -4,6 +4,9 @@
 // se enviará al reconectar. Solo para uso en el navegador (fetch same-origin relativo
 // + navigator); no llamar desde Server Components.
 
+/** Evento de ventana que dispara `mutate()` cuando una mutación queda encolada. */
+export const MUTATION_QUEUED_EVENT = '3b:mutation-queued';
+
 export type MutateOutcome<T = unknown> =
   | { status: 'ok'; data: T | null }
   | { status: 'queued' }
@@ -52,6 +55,11 @@ export async function mutate<T = unknown>(
     // El fetch rechazó (sin respuesta). Si estamos offline, el SW ya encoló la
     // request para reenviarla al reconectar (Background Sync).
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      // Aviso global (lo muestra <QueuedToast/>), así cada componente no repite el
+      // feedback de "encolado".
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(MUTATION_QUEUED_EVENT));
+      }
       return { status: 'queued' };
     }
     return {

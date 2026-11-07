@@ -4,6 +4,7 @@ import type { KycDocType, KycSubmission } from '@3b/contracts';
 import { Button } from '@3b/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { mutate } from '../../lib/mutate';
 
 const DOC_LABEL: Record<KycDocType, string> = {
   rif: 'RIF',
@@ -41,20 +42,16 @@ export function KycReviewQueue({ items }: { items: KycReviewItem[] }) {
   async function review(id: string, decision: 'approve' | 'reject') {
     setError(null);
     setBusy(id);
-    const res = await fetch(`/v1/kyc/${id}/review`, {
+    const outcome = await mutate(`/v1/kyc/${id}/review`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ decision }),
+      body: { decision },
     });
     setBusy(null);
-    if (res.ok) {
-      router.refresh();
+    if (outcome.status === 'error') {
+      setError(outcome.message);
       return;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    setError(data?.error ?? 'No se pudo revisar la verificación.');
+    router.refresh();
   }
 
   if (items.length === 0) {

@@ -4,6 +4,7 @@ import type { AttributeDataType, AttributeDefinition } from '@3b/contracts';
 import { Button, cn, Input, Label } from '@3b/ui';
 import { useRouter } from 'next/navigation';
 import { useId, useState } from 'react';
+import { mutate } from '../../lib/mutate';
 
 const fieldClass = cn(
   'h-9 w-full rounded-md border border-input bg-field px-3 text-sm',
@@ -44,18 +45,15 @@ export function StoreAttributes({
   async function remove(attrId: string) {
     setError(null);
     setBusy(true);
-    const res = await fetch(`/v1/stores/${storeId}/attributes/${attrId}`, {
+    const outcome = await mutate(`/v1/stores/${storeId}/attributes/${attrId}`, {
       method: 'DELETE',
     });
     setBusy(false);
-    if (res.ok) {
-      router.refresh();
+    if (outcome.status === 'error') {
+      setError(outcome.message);
       return;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    setError(data?.error ?? 'No se pudo borrar.');
+    router.refresh();
   }
 
   return (
@@ -159,22 +157,20 @@ function AddAttribute({
         .map((s) => s.trim())
         .filter(Boolean);
     }
-    const res = await fetch(`/v1/stores/${storeId}/attributes`, {
+    const formEl = e.currentTarget;
+    const outcome = await mutate(`/v1/stores/${storeId}/attributes`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body,
     });
     setLoading(false);
-    if (res.ok) {
-      (e.target as HTMLFormElement).reset();
-      setDataType('text');
-      router.refresh();
+    if (outcome.status === 'error') {
+      onError(outcome.message);
       return;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    onError(data?.error ?? 'No se pudo crear el atributo.');
+    // ok o queued (el toast global avisa si quedó encolada)
+    formEl.reset();
+    setDataType('text');
+    router.refresh();
   }
 
   return (

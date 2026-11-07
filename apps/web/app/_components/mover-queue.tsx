@@ -4,6 +4,7 @@ import type { Shipment } from '@3b/contracts';
 import { Button, Input } from '@3b/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { mutate } from '../../lib/mutate';
 
 /**
  * Cola del Mover (M6a): solicitudes de envío abiertas en sus comunidades. Por cada
@@ -26,20 +27,16 @@ export function MoverQueue({ shipments }: { shipments: Shipment[] }) {
     const etaMin = Number(form.get('etaMin') ?? 0);
     if (!price || etaMin <= 0) return;
     setBusy(shipmentId);
-    const res = await fetch(`/v1/shipments/${shipmentId}/offers`, {
+    const outcome = await mutate(`/v1/shipments/${shipmentId}/offers`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ price, etaMin }),
+      body: { price, etaMin },
     });
     setBusy(null);
-    if (res.ok) {
-      router.refresh();
+    if (outcome.status === 'error') {
+      setError(outcome.message);
       return;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    setError(data?.error ?? 'No se pudo ofertar.');
+    router.refresh();
   }
 
   if (shipments.length === 0) {

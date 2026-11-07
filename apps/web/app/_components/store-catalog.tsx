@@ -12,6 +12,7 @@ import { Button, cn, Input, Label } from '@3b/ui';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useState } from 'react';
+import { mutate as apiMutate, type MutateInit } from '../../lib/mutate';
 
 const fieldClass = cn(
   'h-9 w-full rounded-md border border-input bg-field px-3 text-sm',
@@ -55,34 +56,28 @@ export function StoreCatalog({
   const [busy, setBusy] = useState(false);
   const categoryName = new Map(categories.map((c) => [c.id, c.name]));
 
-  async function mutate(path: string, init: RequestInit) {
+  async function submit(path: string, init: MutateInit) {
     setError(null);
     setBusy(true);
-    const res = await fetch(`/v1/stores/${storeId}/items${path}`, init);
+    const outcome = await apiMutate(`/v1/stores/${storeId}/items${path}`, init);
     setBusy(false);
-    if (res.ok) {
-      router.refresh();
-      return true;
+    if (outcome.status === 'error') {
+      setError(outcome.message);
+      return false;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    setError(data?.error ?? 'No se pudo completar la acción.');
-    return false;
+    // ok o queued (el toast global avisa si quedó encolada)
+    router.refresh();
+    return true;
   }
 
   function togglePublish(item: Item) {
     const status: ItemStatus =
       item.status === 'published' ? 'draft' : 'published';
-    return mutate(`/${item.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
-    });
+    return submit(`/${item.id}`, { method: 'PATCH', body: { status } });
   }
 
   function remove(itemId: string) {
-    return mutate(`/${itemId}`, { method: 'DELETE' });
+    return submit(`/${itemId}`, { method: 'DELETE' });
   }
 
   return (
@@ -224,10 +219,10 @@ function AddItem({
       attributes[def.key] = def.dataType === 'number' ? Number(v) : v;
     }
 
-    const res = await fetch(`/v1/stores/${storeId}/items`, {
+    const formEl = e.currentTarget;
+    const outcome = await apiMutate(`/v1/stores/${storeId}/items`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+      body: {
         kind: form.get('kind') as ItemKind,
         slug: form.get('slug'),
         title: form.get('title'),
@@ -237,19 +232,17 @@ function AddItem({
         categoryId: category || undefined,
         attributes: Object.keys(attributes).length ? attributes : undefined,
         status: 'draft',
-      }),
+      },
     });
     setLoading(false);
-    if (res.ok) {
-      (e.target as HTMLFormElement).reset();
-      setCategory('');
-      router.refresh();
+    if (outcome.status === 'error') {
+      onError(outcome.message);
       return;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    onError(data?.error ?? 'No se pudo crear el ítem.');
+    // ok o queued (el toast global avisa si quedó encolada)
+    formEl.reset();
+    setCategory('');
+    router.refresh();
   }
 
   return (

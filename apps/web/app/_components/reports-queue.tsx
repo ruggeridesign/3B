@@ -4,6 +4,7 @@ import type { Report } from '@3b/contracts';
 import { Button } from '@3b/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { mutate } from '../../lib/mutate';
 
 const TARGET_LABEL: Record<Report['targetType'], string> = {
   item: 'Ítem',
@@ -34,20 +35,16 @@ export function ReportsQueue({ reports }: { reports: Report[] }) {
   async function resolve(id: string, status: 'resolved' | 'dismissed') {
     setError(null);
     setBusy(id);
-    const res = await fetch(`/v1/reports/${id}/resolve`, {
+    const outcome = await mutate(`/v1/reports/${id}/resolve`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
+      body: { status },
     });
     setBusy(null);
-    if (res.ok) {
-      router.refresh();
+    if (outcome.status === 'error') {
+      setError(outcome.message);
       return;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    setError(data?.error ?? 'No se pudo resolver el reporte.');
+    router.refresh();
   }
 
   if (reports.length === 0) {

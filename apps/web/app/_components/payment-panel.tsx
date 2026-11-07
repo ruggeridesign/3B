@@ -9,6 +9,7 @@ import type {
 import { Button, cn, Input, Label } from '@3b/ui';
 import { useRouter } from 'next/navigation';
 import { useId, useRef, useState } from 'react';
+import { mutate } from '../../lib/mutate';
 
 const fieldClass = cn(
   'h-9 w-full rounded-md border border-input bg-field px-3 text-sm',
@@ -100,63 +101,57 @@ export function PaymentPanel({
     setError(null);
     const form = new FormData(e.currentTarget);
     setBusy(true);
-    try {
-      const file = proofRef.current?.files?.[0];
-      let proofMediaId: string | undefined;
-      if (file) {
-        if (!PROOF_MIMES.includes(file.type)) {
-          setError('Formato de captura no soportado (JPG, PNG, WebP o AVIF).');
-          setBusy(false);
-          return;
-        }
-        proofMediaId = await uploadProof(file, meId);
-      }
-      const res = await fetch(`/v1/orders/${orderId}/payments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          method: form.get('method'),
-          reference: String(form.get('reference') ?? '').trim(),
-          amount: String(form.get('amount') ?? '').trim(),
-          currency: defaultCurrency,
-          proofMediaId,
-        }),
-      });
-      if (res.ok) {
-        router.refresh();
+    // La captura (opcional) necesita red: si falla la subida, no seguimos. El
+    // reporte en sí sí puede encolarse offline (si no hay captura).
+    let proofMediaId: string | undefined;
+    const file = proofRef.current?.files?.[0];
+    if (file) {
+      if (!PROOF_MIMES.includes(file.type)) {
+        setError('Formato de captura no soportado (JPG, PNG, WebP o AVIF).');
+        setBusy(false);
         return;
       }
-      const data = (await res.json().catch(() => null)) as {
-        error?: string;
-      } | null;
-      setError(data?.error ?? 'No se pudo reportar el pago.');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo reportar.');
-    } finally {
-      setBusy(false);
+      try {
+        proofMediaId = await uploadProof(file, meId);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : 'No se pudo subir la captura.',
+        );
+        setBusy(false);
+        return;
+      }
     }
+    const outcome = await mutate(`/v1/orders/${orderId}/payments`, {
+      method: 'POST',
+      body: {
+        method: form.get('method'),
+        reference: String(form.get('reference') ?? '').trim(),
+        amount: String(form.get('amount') ?? '').trim(),
+        currency: defaultCurrency,
+        proofMediaId,
+      },
+    });
+    setBusy(false);
+    if (outcome.status === 'error') {
+      setError(outcome.message);
+      return;
+    }
+    router.refresh();
   }
 
   async function review(paymentId: string, decision: 'confirm' | 'reject') {
     setError(null);
     setBusy(true);
-    const res = await fetch(
+    const outcome = await mutate(
       `/v1/orders/${orderId}/payments/${paymentId}/review`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision }),
-      },
+      { method: 'POST', body: { decision } },
     );
     setBusy(false);
-    if (res.ok) {
-      router.refresh();
+    if (outcome.status === 'error') {
+      setError(outcome.message);
       return;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    setError(data?.error ?? 'No se pudo revisar el pago.');
+    router.refresh();
   }
 
   // Sin formularios ni comprobantes: no mostramos el panel.

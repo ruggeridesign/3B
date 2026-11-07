@@ -4,6 +4,7 @@ import type { KycDocType, KycSubmission, MeCommunity } from '@3b/contracts';
 import { Button, cn, Label } from '@3b/ui';
 import { useRouter } from 'next/navigation';
 import { useId, useState } from 'react';
+import { mutate } from '../../lib/mutate';
 
 const fieldClass = cn(
   'h-9 w-full rounded-md border border-input bg-field px-3 text-sm',
@@ -48,28 +49,19 @@ export function MoverApply({
     setError(null);
     const form = new FormData(e.currentTarget);
     setBusy(true);
-    try {
-      const res = await fetch('/v1/me/mover/applications', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          communityId: form.get('communityId'),
-          docType: form.get('docType'),
-        }),
-      });
-      if (res.ok) {
-        router.refresh();
-        return;
-      }
-      const data = (await res.json().catch(() => null)) as {
-        error?: string;
-      } | null;
-      setError(data?.error ?? 'No se pudo enviar la solicitud.');
-    } catch {
-      setError('No se pudo enviar la solicitud.');
-    } finally {
-      setBusy(false);
+    const outcome = await mutate('/v1/me/mover/applications', {
+      method: 'POST',
+      body: {
+        communityId: form.get('communityId'),
+        docType: form.get('docType'),
+      },
+    });
+    setBusy(false);
+    if (outcome.status === 'error') {
+      setError(outcome.message);
+      return;
     }
+    router.refresh();
   }
 
   const byCommunity = new Map(communities.map((c) => [c.id, c.name]));

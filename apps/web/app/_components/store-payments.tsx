@@ -4,6 +4,7 @@ import type { PaymentMethod, PaymentMethodType } from '@3b/contracts';
 import { Button, cn, Input, Label } from '@3b/ui';
 import { useRouter } from 'next/navigation';
 import { useId, useState } from 'react';
+import { mutate as apiMutate, type MutateInit } from '../../lib/mutate';
 
 const fieldClass = cn(
   'h-9 w-full rounded-md border border-input bg-field px-3 text-sm',
@@ -63,35 +64,32 @@ export function StorePayments({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function mutate(path: string, init: RequestInit) {
+  async function submit(path: string, init: MutateInit) {
     setError(null);
     setBusy(true);
-    const res = await fetch(
+    const outcome = await apiMutate(
       `/v1/stores/${storeId}/payment-methods${path}`,
       init,
     );
     setBusy(false);
-    if (res.ok) {
-      router.refresh();
-      return true;
+    if (outcome.status === 'error') {
+      setError(outcome.message);
+      return false;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    setError(data?.error ?? 'No se pudo completar la acción.');
-    return false;
+    // ok o queued (el toast global avisa si quedó encolada)
+    router.refresh();
+    return true;
   }
 
   function toggleActive(pm: PaymentMethod) {
-    return mutate(`/${pm.id}`, {
+    return submit(`/${pm.id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ active: !pm.active }),
+      body: { active: !pm.active },
     });
   }
 
   function remove(pmId: string) {
-    return mutate(`/${pmId}`, { method: 'DELETE' });
+    return submit(`/${pmId}`, { method: 'DELETE' });
   }
 
   return (
@@ -185,21 +183,19 @@ function AddPayment({
       const v = String(form.get(key) ?? '').trim();
       if (v) details[key] = v;
     }
-    const res = await fetch(`/v1/stores/${storeId}/payment-methods`, {
+    const formEl = e.currentTarget;
+    const outcome = await apiMutate(`/v1/stores/${storeId}/payment-methods`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type, details }),
+      body: { type, details },
     });
     setLoading(false);
-    if (res.ok) {
-      (e.target as HTMLFormElement).reset();
-      router.refresh();
+    if (outcome.status === 'error') {
+      onError(outcome.message);
       return;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    onError(data?.error ?? 'No se pudo agregar el método de pago.');
+    // ok o queued (el toast global avisa si quedó encolada)
+    formEl.reset();
+    router.refresh();
   }
 
   return (

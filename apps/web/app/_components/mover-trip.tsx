@@ -4,6 +4,7 @@ import type { Shipment, ShipmentStatus } from '@3b/contracts';
 import { Button, Input } from '@3b/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { mutate } from '../../lib/mutate';
 
 const STATUS_LABEL: Record<Shipment['status'], string> = {
   solicitado: 'Solicitado',
@@ -39,20 +40,16 @@ export function MoverTrip({ trips }: { trips: Shipment[] }) {
   async function progress(id: string, toStatus: ShipmentStatus) {
     setError(null);
     setBusy(id);
-    const res = await fetch(`/v1/shipments/${id}/progress`, {
+    const outcome = await mutate(`/v1/shipments/${id}/progress`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ toStatus }),
+      body: { toStatus },
     });
     setBusy(null);
-    if (res.ok) {
-      router.refresh();
+    if (outcome.status === 'error') {
+      setError(outcome.message);
       return;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    setError(data?.error ?? 'No se pudo avanzar el viaje.');
+    router.refresh();
   }
 
   function share(id: string) {
@@ -104,20 +101,16 @@ export function MoverTrip({ trips }: { trips: Shipment[] }) {
       return;
     }
     setBusy(id);
-    const res = await fetch(`/v1/shipments/${id}/deliver`, {
+    const outcome = await mutate(`/v1/shipments/${id}/deliver`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin }),
+      body: { pin },
     });
     setBusy(null);
-    if (res.ok) {
-      router.refresh();
+    if (outcome.status === 'error') {
+      setError(outcome.message);
       return;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    setError(data?.error ?? 'No se pudo entregar.');
+    router.refresh();
   }
 
   return (

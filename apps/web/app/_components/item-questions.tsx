@@ -4,6 +4,7 @@ import type { Question } from '@3b/contracts';
 import { Button, Input } from '@3b/ui';
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
+import { mutate } from '../../lib/mutate';
 
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString('es', {
@@ -38,21 +39,18 @@ export function ItemQuestions({
     const body = String(new FormData(e.currentTarget).get('body') ?? '').trim();
     if (body.length < 3) return;
     setBusy(true);
-    const res = await fetch(`/v1/items/${itemId}/questions`, {
+    const outcome = await mutate(`/v1/items/${itemId}/questions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ body }),
+      body: { body },
     });
     setBusy(false);
-    if (res.ok) {
-      askRef.current?.reset();
-      router.refresh();
+    if (outcome.status === 'error') {
+      setError(outcome.message);
       return;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    setError(data?.error ?? 'No se pudo enviar la pregunta.');
+    // ok o queued (el toast global avisa si quedó encolada)
+    askRef.current?.reset();
+    router.refresh();
   }
 
   async function answer(e: React.FormEvent<HTMLFormElement>, qId: string) {
@@ -63,20 +61,16 @@ export function ItemQuestions({
     ).trim();
     if (!value) return;
     setBusy(true);
-    const res = await fetch(`/v1/questions/${qId}/answer`, {
+    const outcome = await mutate(`/v1/questions/${qId}/answer`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ answer: value }),
+      body: { answer: value },
     });
     setBusy(false);
-    if (res.ok) {
-      router.refresh();
+    if (outcome.status === 'error') {
+      setError(outcome.message);
       return;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    setError(data?.error ?? 'No se pudo responder.');
+    router.refresh();
   }
 
   return (

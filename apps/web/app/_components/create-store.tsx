@@ -4,6 +4,7 @@ import type { MeCommunity } from '@3b/contracts';
 import { Button, cn, Input, Label } from '@3b/ui';
 import { useRouter } from 'next/navigation';
 import { useId, useState } from 'react';
+import { mutate } from '../../lib/mutate';
 
 const fieldClass = cn(
   'h-9 w-full rounded-md border border-input bg-field px-3 text-sm',
@@ -27,26 +28,24 @@ export function CreateStore({ communities }: { communities: MeCommunity[] }) {
     setError(null);
     setLoading(true);
     const form = new FormData(e.currentTarget);
-    const res = await fetch('/v1/stores', {
+    const formEl = e.currentTarget;
+    const outcome = await mutate('/v1/stores', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+      body: {
         communityId: form.get('communityId'),
         kind: form.get('kind'),
         slug: form.get('slug'),
         name: form.get('name'),
-      }),
+      },
     });
     setLoading(false);
-    if (res.ok) {
-      router.refresh();
-      (e.target as HTMLFormElement).reset();
+    if (outcome.status === 'error') {
+      setError(outcome.message);
       return;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    setError(data?.error ?? 'No se pudo abrir la tienda.');
+    // ok o queued (el toast global avisa si quedó encolada)
+    router.refresh();
+    formEl.reset();
   }
 
   if (communities.length === 0) {

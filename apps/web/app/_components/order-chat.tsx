@@ -4,6 +4,7 @@ import type { Message } from '@3b/contracts';
 import { Button, cn, Input } from '@3b/ui';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import { mutate } from '../../lib/mutate';
 
 function fmtTime(iso: string): string {
   return new Date(iso).toLocaleString('es', {
@@ -56,21 +57,18 @@ export function OrderChat({
     const body = String(form.get('body') ?? '').trim();
     if (!body) return;
     setBusy(true);
-    const res = await fetch(`/v1/orders/${orderId}/messages`, {
+    const outcome = await mutate(`/v1/orders/${orderId}/messages`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ body }),
+      body: { body },
     });
     setBusy(false);
-    if (res.ok) {
-      formRef.current?.reset();
-      router.refresh();
+    if (outcome.status === 'error') {
+      setError(outcome.message);
       return;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    setError(data?.error ?? 'No se pudo enviar el mensaje.');
+    // ok o queued (el toast global avisa si quedó encolada)
+    formRef.current?.reset();
+    router.refresh();
   }
 
   return (

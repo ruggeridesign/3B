@@ -4,6 +4,7 @@ import type { LocationPing, Shipment, ShipmentAssignment } from '@3b/contracts';
 import { Button } from '@3b/ui';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { mutate } from '../../lib/mutate';
 
 const WS_BASE = (
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8787'
@@ -82,20 +83,16 @@ export function ShipmentPanel({
   async function request() {
     setError(null);
     setBusy('request');
-    const res = await fetch('/v1/shipments', {
+    const outcome = await mutate('/v1/shipments', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orderId }),
+      body: { orderId },
     });
     setBusy(null);
-    if (res.ok) {
-      router.refresh();
+    if (outcome.status === 'error') {
+      setError(outcome.message);
       return;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    setError(data?.error ?? 'No se pudo solicitar el envío.');
+    router.refresh();
   }
 
   async function accept(shipmentId: string, offerId: string) {

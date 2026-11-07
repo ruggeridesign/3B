@@ -8,6 +8,7 @@ import type {
 import { Button, cn, Input, Label } from '@3b/ui';
 import { useRouter } from 'next/navigation';
 import { useId, useState } from 'react';
+import { mutate as apiMutate, type MutateInit } from '../../lib/mutate';
 
 const fieldClass = cn(
   'h-9 rounded-md border border-input bg-field px-3 text-sm',
@@ -41,32 +42,26 @@ export function StoreTeam({
   const [busy, setBusy] = useState(false);
 
   /** Ejecuta una mutación contra la API y refresca; centraliza el manejo de error. */
-  async function mutate(path: string, init: RequestInit) {
+  async function submit(path: string, init: MutateInit) {
     setError(null);
     setBusy(true);
-    const res = await fetch(`/v1/stores/${storeId}${path}`, init);
+    const outcome = await apiMutate(`/v1/stores/${storeId}${path}`, init);
     setBusy(false);
-    if (res.ok) {
-      router.refresh();
-      return true;
+    if (outcome.status === 'error') {
+      setError(outcome.message);
+      return false;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    setError(data?.error ?? 'No se pudo completar la acción.');
-    return false;
+    // ok o queued (el toast global avisa si quedó encolada)
+    router.refresh();
+    return true;
   }
 
   function changeRole(userId: string, role: string) {
-    return mutate(`/members/${userId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role }),
-    });
+    return submit(`/members/${userId}`, { method: 'PATCH', body: { role } });
   }
 
   function removeMember(userId: string) {
-    return mutate(`/members/${userId}`, { method: 'DELETE' });
+    return submit(`/members/${userId}`, { method: 'DELETE' });
   }
 
   return (
@@ -152,24 +147,22 @@ function InviteForm({
     onError(null);
     setLoading(true);
     const form = new FormData(e.currentTarget);
-    const res = await fetch(`/v1/stores/${storeId}/members`, {
+    const formEl = e.currentTarget;
+    const outcome = await apiMutate(`/v1/stores/${storeId}/members`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+      body: {
         email: form.get('email'),
         role: form.get('role'),
-      }),
+      },
     });
     setLoading(false);
-    if (res.ok) {
-      (e.target as HTMLFormElement).reset();
-      router.refresh();
+    if (outcome.status === 'error') {
+      onError(outcome.message);
       return;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    onError(data?.error ?? 'No se pudo invitar.');
+    // ok o queued (el toast global avisa si quedó encolada)
+    formEl.reset();
+    router.refresh();
   }
 
   return (

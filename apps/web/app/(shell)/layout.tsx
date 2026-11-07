@@ -5,6 +5,7 @@ import { CartProvider } from '../_components/cart-provider';
 import { ConnectionStatus } from '../_components/connection-status';
 import { ImpersonationBanner } from '../_components/impersonation-banner';
 import { Navbar } from '../_components/navbar';
+import { QueuedToast } from '../_components/queued-toast';
 import { SyncListener } from '../_components/sync-listener';
 
 export default async function ShellLayout({
@@ -28,6 +29,7 @@ export default async function ShellLayout({
         )}
         <Navbar me={me} />
         <main className="mx-auto max-w-5xl p-6">{children}</main>
+        <QueuedToast />
       </div>
     </CartProvider>
   );

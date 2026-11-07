@@ -41,7 +41,7 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
   **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
   la proyección de ranking con señales de comportamiento).
-- **M8 · PWA — EN CURSO.** **M8a + M8b + M8c.1 cerrados.** **M8a:** la web es **instalable** y
+- **M8 · PWA — EN CURSO.** **M8a + M8b + M8c cerrados.** **M8a:** la web es **instalable** y
   abre **offline**. Service worker con `@serwist/turbopack` (camino correcto para el build
   Turbopack de Next 16; `@serwist/next`/webpack no aplica), SW en `app/sw.ts` servido por
   `app/serwist/[path]/route.ts`, `manifest.webmanifest` (`app/manifest.ts`, crema `#f4f2e0`),
@@ -52,11 +52,16 @@
   cae la red. **M8c.1 — cola offline (Background Sync):** el SW encola las mutaciones a `/v1`
   (POST/PUT/PATCH/DELETE → `BackgroundSyncPlugin` `mutations-v1`) y las reenvía al reconectar,
   avisando a las pestañas (`mutations-synced` → `SyncListener` refresca). Helper cliente
-  `lib/mutate.ts` (feedback `ok`/`queued`/`error` + Idempotency-Key), integrado en el flujo de
-  pedidos (`order-actions`) como referencia. **Siguiente: M8c.2** — migrar el resto de los flujos
-  de mutación (pagos, chat, reseñas, preguntas, reportes, envíos, KYC…) al helper `mutate()`.
-  Luego M8d (push VAPID: tabla + API + worker + permiso) y M8e (presupuesto de rendimiento
-  <170 KB JS inicial / LCP < 2,5 s). Mejora futura: purgar la caché `api-v1` al cerrar sesión.
+  `lib/mutate.ts` (feedback `ok`/`queued`/`error` + Idempotency-Key). **M8c.2 — migración:** ~17
+  componentes usan `mutate()` (pedidos, chat, reseñas, preguntas, reportes, KYC review, Mover
+  apply/ofertar/avanzar/entregar, envío, statement, atributos, catálogo, equipo, métodos de pago,
+  crear tienda); el feedback de encolado es un **toast global** (`QueuedToast`) que dispara
+  `mutate()`. Excluidos (documentado): subidas con `FormData`/media, pings GPS, "leído" del chat,
+  impersonation/admin, y el checkout (clave de idempotencia propia; igual se encola, aviso en el
+  `catch` offline). **Siguiente: M8d** — push (VAPID): tabla de suscripciones + API subscribe/
+  unsubscribe + envío desde worker/outbox + permiso en web + handlers `push`/`notificationclick`
+  en el SW. Luego M8e (presupuesto <170 KB JS inicial / LCP < 2,5 s). Mejora futura: purgar la
+  caché `api-v1` al cerrar sesión.
 - **M7 · Billing + panel de comunidad — CERRADO.** **M7a/M7b/M7c/M7d** completos (módulo
   `billing` + identity/comunidad). `plans` + `subscriptions` (una por tienda; `trial` por
   trigger; la cambia un admin); `fee_accruals` (polimórfico `store`|`mover`): al `completado`
@@ -229,6 +234,42 @@
   unidad lógica; cada uno con su entrada en este DDR.
 
 ---
+
+## 2026-11-07 · _(este commit)_ · feat — M8c.2: migración de mutaciones al helper + toast global
+
+- **Qué:** se migraron ~17 componentes a `mutate()` para que **toda** mutación de dominio tenga
+  el mismo comportamiento offline (encolar + avisar) que el flujo de pedidos de M8c.1. El aviso
+  de "encolado" pasa a ser un **toast global** en vez de texto por componente. Cierra M8c.
+- **Por qué:** M8c.1 dejó el helper + la cola, pero solo `order-actions` los usaba; el resto de
+  los `fetch('/v1/...')` inline seguían colgando la UI sin feedback offline (alcance "cola +
+  helper central" elegido con el usuario).
+- **Impacto / archivos (solo `apps/web`):**
+  - `lib/mutate.ts`: al quedar `queued`, dispara `window` event `MUTATION_QUEUED_EVENT`.
+  - `app/_components/queued-toast.tsx` (`QueuedToast`) + `app/(shell)/layout.tsx`: toast efímero
+    (vidrio, motion, autodismiss) que escucha ese evento. `order-actions` deja su estado local.
+  - Migrados a `mutate()`: `item-questions`, `review-form`, `report-button`, `reports-queue`,
+    `kyc-review-queue`, `mover-apply`, `mover-queue`, `mover-trip` (avanzar/entregar),
+    `shipment-panel`, `statement-report`, `store-attributes`, `store-catalog`, `store-team`,
+    `store-payments`, `create-store`, `payment-panel` (reportar/revisar). Los helpers genéricos
+    `mutate(path, RequestInit)` de catálogo/equipo/pagos pasaron a `submit(path, MutateInit)`
+    delegando en `apiMutate`.
+  - `comprar/carrito/page.tsx`: el checkout conserva su `fetch` (clave de idempotencia estable +
+    usa el nº/id de respuesta), pero el `catch` offline dispara el toast (el SW igual lo encola).
+- **Decisiones de diseño:**
+  - **Toast global (no estado por componente):** menos boilerplate y feedback consistente; cada
+    componente trata `queued` como éxito optimista (refresca/limpia) salvo que use datos de la
+    respuesta.
+  - **Exclusiones (a propósito):** subidas con `FormData`/media (cuerpo no-JSON; la red es
+    inevitable), **pings GPS** (reenviar posiciones viejas es incorrecto), "marcar leído" del
+    chat (fire-and-forget), **impersonation/admin** (semántica de reenvío rara) y el **checkout**
+    (idempotencia propia + usa la respuesta).
+- **Verificación:** `pnpm check` **verde** (lint sin errores, typecheck 10/10, unit 19/19,
+  boundaries **676 módulos**). `next build` OK (Serwist: 30 entradas de precache).
+- **Estado para retomar:** **M8c CERRADO.** Siguiente: **M8d — push (VAPID)**: tabla de
+  suscripciones + endpoints subscribe/unsubscribe + envío desde el worker/outbox ante eventos +
+  permiso en web + handlers `push`/`notificationclick` en `app/sw.ts` (acá hay una decisión de
+  producto: qué eventos notifican). Luego M8e (presupuesto de rendimiento).
+- **Relacionado:** ROADMAP M8; entrada M8c.1; decisión de alcance "cola + helper central".
 
 ## 2026-11-07 · _(este commit)_ · feat — M8c.1: cola offline (Background Sync) + helper de mutaciones
 

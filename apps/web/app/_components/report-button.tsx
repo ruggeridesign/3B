@@ -3,6 +3,7 @@
 import type { ReportTargetType } from '@3b/contracts';
 import { Button, Input } from '@3b/ui';
 import { useState } from 'react';
+import { mutate } from '../../lib/mutate';
 
 /**
  * Afordancia "Reportar" para un contenido (M5d.4). Abre un campo de motivo y
@@ -34,20 +35,17 @@ export function ReportButton({
     ).trim();
     if (reason.length < 3) return;
     setBusy(true);
-    const res = await fetch('/v1/reports', {
+    const outcome = await mutate('/v1/reports', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ targetType, targetId, reason }),
+      body: { targetType, targetId, reason },
     });
     setBusy(false);
-    if (res.ok) {
-      setDone(true);
+    if (outcome.status === 'error') {
+      setError(outcome.message);
       return;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    setError(data?.error ?? 'No se pudo enviar el reporte.');
+    // ok o queued (el toast global avisa si quedó encolada)
+    setDone(true);
   }
 
   if (!open) {

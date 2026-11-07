@@ -4,6 +4,7 @@ import type { Review } from '@3b/contracts';
 import { Button, cn, Input } from '@3b/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { mutate } from '../../lib/mutate';
 
 /**
  * Reseña de la tienda en un pedido `completado` (M5d.2). Si el comprador ya
@@ -32,20 +33,16 @@ export function ReviewForm({
     const form = new FormData(e.currentTarget);
     const body = String(form.get('body') ?? '').trim();
     setBusy(true);
-    const res = await fetch(`/v1/orders/${orderId}/reviews`, {
+    const outcome = await mutate(`/v1/orders/${orderId}/reviews`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rating, body: body || undefined }),
+      body: { rating, body: body || undefined },
     });
     setBusy(false);
-    if (res.ok) {
-      router.refresh();
+    if (outcome.status === 'error') {
+      setError(outcome.message);
       return;
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    setError(data?.error ?? 'No se pudo enviar la reseña.');
+    router.refresh();
   }
 
   return (

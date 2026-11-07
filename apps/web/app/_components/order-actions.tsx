@@ -23,13 +23,11 @@ export function OrderActions({
   const router = useRouter();
   const [busy, setBusy] = useState<OrderStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [queued, setQueued] = useState(false);
 
   if (actions.length === 0) return null;
 
   async function run(toStatus: OrderStatus) {
     setError(null);
-    setQueued(false);
     setBusy(toStatus);
     const outcome = await mutate(`/v1/orders/${orderId}/transition`, {
       method: 'POST',
@@ -38,11 +36,10 @@ export function OrderActions({
     setBusy(null);
     if (outcome.status === 'ok') {
       router.refresh();
-    } else if (outcome.status === 'queued') {
-      setQueued(true);
-    } else {
+    } else if (outcome.status === 'error') {
       setError(outcome.message);
     }
+    // 'queued': el <QueuedToast/> global avisa; nada que mover todavía.
   }
 
   return (
@@ -65,11 +62,6 @@ export function OrderActions({
         })}
       </div>
       {error && <p className="text-destructive text-sm">{error}</p>}
-      {queued && (
-        <p className="text-muted-foreground text-sm">
-          Sin conexión: la acción se enviará automáticamente al reconectar.
-        </p>
-      )}
     </div>
   );
 }

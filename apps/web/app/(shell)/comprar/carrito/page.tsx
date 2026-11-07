@@ -4,6 +4,7 @@ import { Button, cn, Input, Label } from '@3b/ui';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
+import { MUTATION_QUEUED_EVENT } from '../../../../lib/mutate';
 import { type CartLine, useCart } from '../../../_components/cart-provider';
 
 const fieldClass = cn(
@@ -100,7 +101,13 @@ function StoreGroup({
       }
       setError(data?.error ?? 'No se pudo crear el pedido.');
     } catch {
-      setError('Error de red al crear el pedido.');
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        // El SW encoló el pedido; se creará al reconectar (idempotente por la
+        // Idempotency-Key estable). El <QueuedToast/> global avisa.
+        window.dispatchEvent(new CustomEvent(MUTATION_QUEUED_EVENT));
+      } else {
+        setError('Error de red al crear el pedido.');
+      }
     } finally {
       setLoading(false);
     }
