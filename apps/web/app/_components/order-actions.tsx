@@ -4,6 +4,7 @@ import type { OrderStatus } from '@3b/contracts';
 import { Button } from '@3b/ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { mutate } from '../../lib/mutate';
 import type { OrderAction } from '../../lib/orders';
 
 /**
@@ -22,26 +23,26 @@ export function OrderActions({
   const router = useRouter();
   const [busy, setBusy] = useState<OrderStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [queued, setQueued] = useState(false);
 
   if (actions.length === 0) return null;
 
   async function run(toStatus: OrderStatus) {
     setError(null);
+    setQueued(false);
     setBusy(toStatus);
-    const res = await fetch(`/v1/orders/${orderId}/transition`, {
+    const outcome = await mutate(`/v1/orders/${orderId}/transition`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ toStatus }),
+      body: { toStatus },
     });
     setBusy(null);
-    if (res.ok) {
+    if (outcome.status === 'ok') {
       router.refresh();
-      return;
+    } else if (outcome.status === 'queued') {
+      setQueued(true);
+    } else {
+      setError(outcome.message);
     }
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    setError(data?.error ?? 'No se pudo mover el pedido.');
   }
 
   return (
@@ -64,6 +65,11 @@ export function OrderActions({
         })}
       </div>
       {error && <p className="text-destructive text-sm">{error}</p>}
+      {queued && (
+        <p className="text-muted-foreground text-sm">
+          Sin conexión: la acción se enviará automáticamente al reconectar.
+        </p>
+      )}
     </div>
   );
 }

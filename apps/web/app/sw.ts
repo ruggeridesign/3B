@@ -2,6 +2,7 @@
 /// <reference lib="webworker" />
 import { defaultCache } from '@serwist/turbopack/worker';
 import {
+  BackgroundSyncPlugin,
   CacheableResponsePlugin,
   ExpirationPlugin,
   NetworkFirst,
@@ -54,13 +55,38 @@ const apiCache: RuntimeCaching[] = [
   },
 ];
 
+// Cola offline (M8c): las mutaciones del cliente a /v1 que fallan por falta de red
+// se guardan en IndexedDB y se reintentan al reconectar (Background Sync). Una sola
+// cola para todos los métodos → se reenvían en orden. Al terminar un sync, se avisa a
+// las pestañas abiertas para que refresquen (los datos ya cambiaron en el server).
+const mutationSync = new BackgroundSyncPlugin('mutations-v1', {
+  maxRetentionTime: 24 * 60, // minutos (1 día)
+  onSync: async ({ queue }) => {
+    await queue.replayRequests();
+    const windows = await self.clients.matchAll({ type: 'window' });
+    for (const client of windows) {
+      client.postMessage({ type: 'mutations-synced' });
+    }
+  },
+});
+
+// RuntimeCaching.method matchea un solo método, así que una entrada por verbo de
+// escritura (todas comparten la misma cola). Las GET no entran acá (las maneja apiCache).
+const MUTATION_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'] as const;
+const mutationCache: RuntimeCaching[] = MUTATION_METHODS.map((method) => ({
+  matcher: ({ url, sameOrigin }) =>
+    sameOrigin && url.pathname.startsWith('/v1'),
+  method,
+  handler: new NetworkOnly({ plugins: [mutationSync] }),
+}));
+
 const serwist = new Serwist({
   precacheEntries: self.__SW_MANIFEST,
   // Activar la versión nueva del SW apenas instala, sin esperar a cerrar pestañas.
   skipWaiting: true,
   clientsClaim: true,
   navigationPreload: true,
-  runtimeCaching: [...apiCache, ...defaultCache],
+  runtimeCaching: [...apiCache, ...mutationCache, ...defaultCache],
   // Si una navegación falla sin red, servir la página /~offline (precacheada).
   fallbacks: {
     entries: [

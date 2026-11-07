@@ -41,15 +41,20 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
   **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
   la proyección de ranking con señales de comportamiento).
-- **M8 · PWA — EN CURSO.** **M8a + M8b cerrados.** **M8a:** la web es **instalable** y abre
-  **offline**. Service worker con `@serwist/turbopack` (camino correcto para el build Turbopack
-  de Next 16; `@serwist/next`/webpack no aplica), SW en `app/sw.ts` servido por
+- **M8 · PWA — EN CURSO.** **M8a + M8b + M8c.1 cerrados.** **M8a:** la web es **instalable** y
+  abre **offline**. Service worker con `@serwist/turbopack` (camino correcto para el build
+  Turbopack de Next 16; `@serwist/next`/webpack no aplica), SW en `app/sw.ts` servido por
   `app/serwist/[path]/route.ts`, `manifest.webmanifest` (`app/manifest.ts`, crema `#f4f2e0`),
   íconos "3B" por `ImageResponse` (sin binarios; pulido en M9), `viewport`/`themeColor` + meta
   apple y `<SerwistProvider>` (SW desactivado en dev). **M8b — offline resiliente:** el SW cachea
   los GETs de `/v1` con **NetworkFirst** (`api-v1`, timeout 3 s, solo 200, 1 día) y `/api/auth`
   con **NetworkOnly** (nunca la sesión); `ConnectionStatus` (barra en el shell) avisa cuando se
-  cae la red. **Siguiente: M8c** — cola offline (Background Sync) para mutaciones POST/PATCH.
+  cae la red. **M8c.1 — cola offline (Background Sync):** el SW encola las mutaciones a `/v1`
+  (POST/PUT/PATCH/DELETE → `BackgroundSyncPlugin` `mutations-v1`) y las reenvía al reconectar,
+  avisando a las pestañas (`mutations-synced` → `SyncListener` refresca). Helper cliente
+  `lib/mutate.ts` (feedback `ok`/`queued`/`error` + Idempotency-Key), integrado en el flujo de
+  pedidos (`order-actions`) como referencia. **Siguiente: M8c.2** — migrar el resto de los flujos
+  de mutación (pagos, chat, reseñas, preguntas, reportes, envíos, KYC…) al helper `mutate()`.
   Luego M8d (push VAPID: tabla + API + worker + permiso) y M8e (presupuesto de rendimiento
   <170 KB JS inicial / LCP < 2,5 s). Mejora futura: purgar la caché `api-v1` al cerrar sesión.
 - **M7 · Billing + panel de comunidad — CERRADO.** **M7a/M7b/M7c/M7d** completos (módulo
@@ -224,6 +229,45 @@
   unidad lógica; cada uno con su entrada en este DDR.
 
 ---
+
+## 2026-11-07 · _(este commit)_ · feat — M8c.1: cola offline (Background Sync) + helper de mutaciones
+
+- **Qué:** las mutaciones hechas **sin conexión** ya no se pierden: el service worker las
+  **encola** y las **reenvía al reconectar** (Background Sync), y el flujo de pedidos avisa al
+  usuario que la acción quedó pendiente. Primera rebanada del alcance elegido ("cola + helper
+  central"); la migración del resto de los flujos es M8c.2.
+- **Por qué:** roadmap M8 ("cola offline / Background Sync"). Sin esto, una acción offline
+  rechazaba el `fetch` y dejaba la UI colgada sin feedback. Las mutaciones salen de ~20
+  componentes con `fetch('/v1/...')` inline; se centralizan en un helper para dar feedback
+  consistente y adjuntar `Idempotency-Key`.
+- **Impacto / archivos (solo `apps/web`):**
+  - `app/sw.ts`: `BackgroundSyncPlugin('mutations-v1', { maxRetentionTime: 1 día, onSync })` +
+    una entrada `RuntimeCaching` por verbo de escritura (POST/PUT/PATCH/DELETE, `NetworkOnly`,
+    misma cola). `onSync` reenvía (`replayRequests`) y hace `postMessage({type:'mutations-synced'})`
+    a las pestañas. `runtimeCaching = [...apiCache, ...mutationCache, ...defaultCache]`.
+  - `lib/mutate.ts` (`mutate()`): helper cliente que devuelve `ok` | `queued` | `error`
+    (`queued` cuando el `fetch` rechaza y `navigator.onLine` es false → el SW ya encoló) y
+    agrega `Idempotency-Key`. Solo cliente (fetch relativo same-origin).
+  - `app/_components/order-actions.tsx`: usa `mutate()`; muestra "Sin conexión: la acción se
+    enviará al reconectar" cuando queda encolada. **Integración de referencia.**
+  - `app/_components/sync-listener.tsx` (`SyncListener`) + `app/(shell)/layout.tsx`: escucha
+    `mutations-synced` del SW y hace `router.refresh()` para reflejar lo ya aplicado.
+- **Decisiones de diseño:**
+  - **Una cola para todos los verbos:** reenvío en orden; `RuntimeCaching.method` es un solo
+    método, por eso una entrada por verbo compartiendo el mismo `BackgroundSyncPlugin`.
+  - **No corto por `navigator.onLine` antes del fetch:** hay que dejar que la request llegue al
+    SW para que la encole; recién en el `catch` distingo `queued` (offline) de `error`.
+  - **`Idempotency-Key` en toda mutación:** forward-compatible (hoy solo lo honra la creación de
+    pedidos); el resto de los duplicados en reenvío los frenan constraints del server.
+- **Verificación:** `pnpm check` **verde** (lint sin errores, typecheck 10/10, unit 19/19,
+  boundaries 675 módulos). `next build` OK (Serwist: 30 entradas de precache). Smoke en
+  `next start`: el `/serwist/sw.js` servido contiene `mutations-v1`, `replayRequests`,
+  `maxRetentionTime` y `mutations-synced` (el nombre de clase `BackgroundSync` se minifica).
+- **Estado para retomar:** **M8c.1 cerrado.** Siguiente: **M8c.2** — migrar los demás flujos de
+  mutación a `mutate()` (pagos, chat, reseñas, preguntas, reportes, envíos/mover, KYC, tienda/
+  catálogo, impersonate). Nota: las subidas con `FormData` (media) no pasan por el helper (cuerpo
+  no-JSON; su offline queda fuera de alcance). Luego M8d (push VAPID) y M8e (presupuesto).
+- **Relacionado:** ROADMAP M8; entradas M8a/M8b; decisión de alcance "cola + helper central".
 
 ## 2026-11-07 · _(este commit)_ · feat — M8b: PWA offline resiliente (caché de /v1 + indicador de conexión)
 

@@ -5,6 +5,7 @@ import { CartProvider } from '../_components/cart-provider';
 import { ConnectionStatus } from '../_components/connection-status';
 import { ImpersonationBanner } from '../_components/impersonation-banner';
 import { Navbar } from '../_components/navbar';
+import { SyncListener } from '../_components/sync-listener';
 
 export default async function ShellLayout({
   children,
@@ -19,6 +20,7 @@ export default async function ShellLayout({
     <CartProvider>
       <div className="min-h-dvh">
         <ConnectionStatus />
+        <SyncListener />
         {me.impersonating && (
           <ImpersonationBanner
             viewingAs={{ name: me.user.name, email: me.user.email }}
