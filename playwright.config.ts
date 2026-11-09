@@ -30,16 +30,23 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
+  // En CI servimos la build de producción (más estable y rápida que `dev`); en
+  // local usamos los servers de desarrollo y reusamos los que ya estén corriendo.
+  // El job de CI corre `pnpm --filter @3b/web build` antes de la suite.
   webServer: [
     {
-      command: 'pnpm --filter @3b/api dev',
+      command: process.env.CI
+        ? 'pnpm --filter @3b/api start'
+        : 'pnpm --filter @3b/api dev',
       url: 'http://localhost:8787/',
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
       stdout: 'ignore',
     },
     {
-      command: 'pnpm --filter @3b/web dev',
+      command: process.env.CI
+        ? 'pnpm --filter @3b/web start'
+        : 'pnpm --filter @3b/web dev',
       url: 'http://localhost:3000/login',
       reuseExistingServer: !process.env.CI,
       timeout: 180_000,

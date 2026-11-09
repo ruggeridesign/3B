@@ -1,8 +1,9 @@
 # CI de 3B — protege `main` (clave con varios devs en la misma rama).
-#   * check:       lint + typecheck + test unit + límites de módulos (sin DB).
+#   * check:       lint + typecheck + test unit + COMPONENTES web (RTL) + límites.
 #   * integration: Postgres 17 + PostGIS de servicio → reset + migraciones + seed
-#                  → tests de aislamiento RLS (db) y de capacidades RBAC (core).
+#                  → RLS (db) + RBAC (core) + API/HTTP (api, routers Hono).
 #   * budget:      build de la web + presupuesto de JS inicial (M8e, <170 KB gzip).
+#   * e2e:         Playwright (Chromium) → flujos por rol contra web+api+DB reales.
 name: CI
 
 on:
@@ -79,5 +80,50 @@ jobs:
       - name: Bootstrap de la base (extensiones + rol app)
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f infra/db/init/01-init.sql
       # reset + migraciones + seed (determinista) + credenciales, y luego los
-      # tests de integración de todos los paquetes que los definen (db, core).
+      # tests de integración de todos los paquetes que los definen (db, core, api).
       - run: pnpm test:integration
+
+  e2e:
+    name: e2e (Playwright — flujos por rol)
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_USER: 3b
+          POSTGRES_PASSWORD: 3b
+          POSTGRES_DB: 3b
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U 3b -d 3b"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://3b:3b@localhost:5432/3b
+      APP_DATABASE_URL: postgresql://app:app@localhost:5432/3b
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Mismo bootstrap que la DB local (extensiones + rol `app`) + seed determinista.
+      - name: Bootstrap de la base (extensiones + rol app)
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f infra/db/init/01-init.sql
+      - run: pnpm db:reset
+      # Chromium + dependencias de SO del runner.
+      - run: pnpm exec playwright install --with-deps chromium
+      # La suite sirve la build de producción (ver playwright.config webServer en CI).
+      - run: pnpm --filter @3b/web build
+      - run: pnpm test:e2e
+      - name: Subir el reporte de Playwright si falla
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

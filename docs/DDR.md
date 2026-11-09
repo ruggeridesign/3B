@@ -43,6 +43,10 @@
   la proyección de ranking con señales de comportamiento), **M5** (pedido end-to-end),
   **M6** (envíos + rastreo), **M7** (billing + panel de comunidad), **M8 · PWA** (instalable,
   offline, cola, push, presupuesto).
+- **Testing (pirámide):** unit (dominio) + componentes web (RTL/jsdom) + integración
+  DB (RLS/RBAC) + API/HTTP (routers Hono in-process) + E2E (Playwright, por rol) +
+  checklist manual. Comandos y convenciones en `docs/testing/strategy.md`; QA a mano
+  en `docs/testing/manual-qa.md`. CI: jobs `check` · `integration` · `budget` · `e2e`.
 - **M8 · PWA — CERRADO.** **M8a..M8e** completos. **M8a:** la web es **instalable** y
   abre **offline**. Service worker con `@serwist/turbopack` (camino correcto para el build
   Turbopack de Next 16; `@serwist/next`/webpack no aplica), SW en `app/sw.ts` servido por
@@ -253,6 +257,29 @@
   unidad lógica; cada uno con su entrada en este DDR.
 
 ---
+
+## 2026-11-09 · _(este commit)_ · docs/ci — Checklist manual + estrategia + job e2e en CI [Fase 4 de testing, CIERRA]
+
+- **Qué:** cierre del plan de testing. (1) `docs/testing/strategy.md`: la pirámide
+  completa (unit → componentes → integración DB → API/HTTP → E2E → manual), cómo
+  correr cada capa, convenciones (UUIDs del seed, DB compartida) y cómo extender hacia
+  "todas las funcionalidades para todos los usuarios". (2) `docs/testing/manual-qa.md`:
+  checklist de QA manual por rol, con credenciales del seed y resultado esperado.
+  (3) CI: nuevo job **`e2e`** (Postgres de servicio + bootstrap + `db:reset` +
+  `playwright install --with-deps chromium` + build de la web + `pnpm test:e2e`, con
+  subida del reporte si falla).
+- **Por qué:** dejar documentado el "cómo se prueba" y que todo corra en CI; el
+  checklist habilita el testeo manual alineado con lo automático.
+- **Ajuste:** `playwright.config.ts` ahora sirve la **build de producción** en CI
+  (`next start`) y usa `dev`+reuse en local (más estable/rápido en CI).
+- **Impacto / archivos:** `docs/testing/{strategy,manual-qa}.md`,
+  `.github/workflows/ci.yml` (job `e2e` + comentarios), `playwright.config.ts`.
+- **Verificación:** `pnpm exec playwright test --list` lista 12 tests; `pnpm run lint`
+  sin errores. El job `e2e` corre en el próximo push a `main`.
+- **Estado para retomar:** plan de testing (4 fases) **cerrado**. Base extensible;
+  profundizar E2E transaccional (checkout completo, aceptar/entregar, tracking,
+  billing) es trabajo incremental siguiendo `strategy.md`.
+- **Relacionado:** fases 1–3 de testing; `docs/testing/strategy.md`.
 
 ## 2026-11-09 · _(este commit)_ · test — E2E de navegador con Playwright (por rol) [Fase 3 de testing]
 
