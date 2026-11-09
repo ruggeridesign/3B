@@ -11,7 +11,11 @@ export {
   sendPush,
   type VapidConfig,
 } from './infra/push-sender';
-export { storeMemberIds } from './infra/recipients-repo';
+export {
+  conversationContext,
+  orderBrief,
+  storeMemberIds,
+} from './infra/recipients-repo';
 export {
   deleteSubscription,
   listSubscriptionsForUser,

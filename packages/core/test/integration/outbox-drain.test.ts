@@ -23,10 +23,17 @@ describe('outbox drain (worker publisher): publica y marca publicado', () => {
       { topic: TOPICS[1] as string, payload: { n: 2 } },
     ]);
 
+    // Límite alto: la DB es compartida y otros tests emiten muchos eventos de
+    // dominio (triggers de notificación, M8d.2); drenamos todo para incluir los
+    // nuestros (si no, el límite por defecto de 100 podría truncarlos).
     const seen: OutboxEvent[] = [];
-    const n = await drainOutbox(owner.db, async (e) => {
-      seen.push(e);
-    });
+    const n = await drainOutbox(
+      owner.db,
+      async (e) => {
+        seen.push(e);
+      },
+      100_000,
+    );
     expect(n).toBeGreaterThanOrEqual(2);
     expect(seen.map((e) => e.topic)).toEqual(expect.arrayContaining(TOPICS));
 
@@ -45,9 +52,13 @@ describe('outbox drain (worker publisher): publica y marca publicado', () => {
 
   it('es idempotente: un segundo drenado no republica lo ya publicado', async () => {
     const seen: string[] = [];
-    await drainOutbox(owner.db, async (e) => {
-      seen.push(e.topic);
-    });
+    await drainOutbox(
+      owner.db,
+      async (e) => {
+        seen.push(e.topic);
+      },
+      100_000,
+    );
     expect(seen).not.toContain(TOPICS[0]);
     expect(seen).not.toContain(TOPICS[1]);
   });

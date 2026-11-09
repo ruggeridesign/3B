@@ -41,7 +41,7 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
   **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
   la proyección de ranking con señales de comportamiento).
-- **M8 · PWA — EN CURSO.** **M8a + M8b + M8c + M8d.1 + M8d.2a cerrados.** **M8a:** la web es **instalable** y
+- **M8 · PWA — EN CURSO.** **M8a + M8b + M8c + M8d cerrados.** Falta **M8e** (presupuesto de rendimiento). **M8a:** la web es **instalable** y
   abre **offline**. Service worker con `@serwist/turbopack` (camino correcto para el build
   Turbopack de Next 16; `@serwist/next`/webpack no aplica), SW en `app/sw.ts` servido por
   `app/serwist/[path]/route.ts`, `manifest.webmanifest` (`app/manifest.ts`, crema `#f4f2e0`),
@@ -66,10 +66,13 @@
   de dev). **M8d.2a — push por evento (pipeline):** trigger `order_placed_emit` (AFTER INSERT en
   `orders.orders`, SECURITY DEFINER) emite `order.placed` al outbox; el **worker** llama a
   `dispatchNotification` tras drenar, que resuelve destinatarios (`storeMemberIds`), compone el
-  texto y envía push a los miembros de la tienda. **Siguiente: M8d.2b** — el resto de los eventos
-  (producto, ya elegidos): **estado de pedido → comprador**, **envío asignado → Mover + comprador
-  y entregado → comprador**, **mensaje de chat → contraparte**. Luego M8e (presupuesto <170 KB JS
-  inicial / LCP < 2,5 s). Mejora futura: purgar la caché `api-v1` al cerrar sesión.
+  texto y envía push a los miembros de la tienda. **M8d.2b — resto de eventos (cierra M8d):**
+  triggers en `orders`/`shipments`/`messages` emiten `order.status_changed` (comprador; whitelist
+  `aceptado/rechazado/pago_confirmado/pago_rechazado/listo`), `shipment.assigned` (Mover +
+  comprador) y `shipment.delivered` (comprador), y `message.created` (contraparte, excluye al
+  remitente). Diseño **anti-duplicado**: `order.status_changed` excluye `en_envio`/`entregado`
+  (los cubren los triggers de envío). **Siguiente: M8e** — presupuesto de rendimiento (<170 KB JS
+  inicial / LCP < 2,5 s), cierra M8. Mejora futura: purgar la caché `api-v1` al cerrar sesión.
 - **M7 · Billing + panel de comunidad — CERRADO.** **M7a/M7b/M7c/M7d** completos (módulo
   `billing` + identity/comunidad). `plans` + `subscriptions` (una por tienda; `trial` por
   trigger; la cambia un admin); `fee_accruals` (polimórfico `store`|`mover`): al `completado`
@@ -242,6 +245,42 @@
   unidad lógica; cada uno con su entrada en este DDR.
 
 ---
+
+## 2026-11-08 · _(este commit)_ · feat — M8d.2b: push de los eventos de dominio restantes (cierra M8d)
+
+- **Qué:** push ante los 3 grupos de eventos restantes (los que el usuario eligió): **estado de
+  pedido → comprador**, **envío → Mover/comprador**, **mensaje de chat → contraparte**. Cierra
+  M8d (push).
+- **Por qué:** completa la decisión de producto de M8d.2 reusando el patrón trigger→outbox→worker
+  de M8d.2a.
+- **Impacto / archivos:**
+  - **DB:** migración manual `0042_domain_notify_events.sql` (+ journal + snapshot): 3 funciones
+    definer + triggers: `order_status_changed_emit` (AFTER UPDATE OF status en `orders.orders`,
+    WHEN status ∈ whitelist), `shipment_status_emit` (AFTER UPDATE OF status en `shipping.shipments`
+    → `shipment.assigned` si `asignado`, `shipment.delivered` si `entregado`), `message_created_emit`
+    (AFTER INSERT en `messaging.messages` — dispara en las particiones).
+  - **Core (`notifications`):** resolvers `orderBrief`/`conversationContext` (vía `@3b/db`); ramas
+    nuevas en `dispatchNotification` (texto por estado; Mover+comprador en asignado; comprador en
+    entregado; comprador+miembros de tienda menos el remitente en chat). `notifyAll` dedup.
+- **Decisiones de diseño:**
+  - **Anti-duplicado:** `order.status_changed` excluye `en_envio`/`entregado` porque esos hechos ya
+    disparan `shipment.assigned`/`shipment.delivered` para el comprador.
+  - **No notificar al actor:** la whitelist de estado no incluye estados que inicia el comprador
+    (`cancelado`/`completado`); el chat excluye al remitente.
+  - **Trigger en tabla particionada:** el row-trigger en `messaging.messages` (padre) aplica a las
+    particiones (Postgres 11+).
+- **Verificación:** `pnpm check` **verde** (lint, typecheck 10/10, unit 19/19, boundaries **697
+  módulos**). Migración 0042 aplicada; `pnpm test:integration` **verde: db 6/6 + core 40 archivos
+  / 138 tests** (+3: emisión de `order.status_changed`, `shipment.assigned`+`delivered`,
+  `message.created` + resolvers). **Fix:** `outbox-drain.test` ahora drena con límite alto — los
+  nuevos triggers emiten muchos eventos en la DB compartida y el límite por defecto de 100 truncaba
+  sus eventos de prueba (solo ese test llama `drainOutbox`; `reservation-sweep` chequea existencia,
+  no pendientes).
+- **Estado para retomar:** **M8d CERRADO** (push de punta a punta: infra + auto-test + eventos de
+  dominio). Siguiente y último de M8: **M8e** — presupuesto de rendimiento (<170 KB JS inicial /
+  LCP < 2,5 s): medir el bundle inicial, quizá un chequeo en CI, y validar LCP. Nota: push se
+  prueba de verdad en build de producción / app instalada (SW off en dev).
+- **Relacionado:** ROADMAP M8; entradas M8d.1/M8d.2a.
 
 ## 2026-11-08 · _(este commit)_ · feat — M8d.2a: push por evento (pipeline outbox→worker, order.placed)
 
