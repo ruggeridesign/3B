@@ -258,6 +258,26 @@
 
 ---
 
+## 2026-11-09 · _(este commit)_ · test — E2E transaccional del checkout completo (Maker)
+
+- **Qué:** `e2e/flows/checkout.spec.ts` recorre la compra de punta a punta como Maker
+  (Lucía): catálogo → ficha del "Taladro percutor 650W" → **Agregar** (el contador del
+  navbar sube a 1) → **Carrito** → **Confirmar pedido** → el pedido aparece en **"Mis
+  pedidos"**. Verifica el pedido creado capturándolo de la **respuesta de la API**
+  (`POST /v1/orders` 201, estado `realizado`) y luego su presencia en la lista.
+- **Por qué:** era el primer gap señalado en `strategy.md` (profundizar E2E
+  transaccional); da cobertura real del flujo de compra, no solo de "llegar a la
+  pantalla".
+- **Hallazgo (bug de UX, NO corregido acá):** al confirmar, `clearStore()` vacía el
+  carrito y **desmonta** el `StoreGroup`, por lo que la confirmación inline
+  ("Pedido #N realizado · Ver pedido →") **nunca se ve**: el usuario queda en "Tu
+  carrito está vacío". El pedido se crea bien (por eso el test valida vía API + "Mis
+  pedidos"). Queda pendiente decidir/corregir la confirmación post-checkout
+  (`apps/web/app/(shell)/comprar/carrito/page.tsx`).
+- **Impacto / archivos:** `e2e/flows/checkout.spec.ts`.
+- **Verificación:** `pnpm test:e2e` → 13/13 verde (incluye el checkout).
+- **Relacionado:** fase 3 (E2E por rol); `docs/testing/strategy.md`.
+
 ## 2026-11-09 · _(este commit)_ · docs/ci — Checklist manual + estrategia + job e2e en CI [Fase 4 de testing, CIERRA]
 
 - **Qué:** cierre del plan de testing. (1) `docs/testing/strategy.md`: la pirámide
