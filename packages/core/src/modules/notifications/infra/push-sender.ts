@@ -1,5 +1,7 @@
 import type { PushPayload } from '@3b/contracts';
-import webpush from 'web-push';
+// `web-push` v4 es ESM puro: expone named exports (sin `default`). Un namespace
+// import es lo correcto en runtime ESM (el default import crashea bajo Node/tsx).
+import * as webpush from 'web-push';
 import type { StoredSubscription } from './subscription-repo';
 
 /** Credenciales VAPID para firmar los envíos (de env; las inyecta apps/api/worker). */

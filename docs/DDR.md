@@ -254,6 +254,26 @@
 
 ---
 
+## 2026-11-09 · _(este commit)_ · fix — `web-push` v4 es ESM: namespace import (arranque de api/worker)
+
+- **Qué:** `packages/core/.../notifications/infra/push-sender.ts` pasó de
+  `import webpush from 'web-push'` (default) a `import * as webpush from 'web-push'`
+  (namespace). El resto del archivo no cambia (`webpush.sendNotification(...)`).
+- **Por qué:** `web-push@4.0.0` es **ESM puro** (`"type": "module"`) y expone **solo
+  named exports** (sin `default`). Bajo Node 24 + `tsx` (ESM nativo), el default import
+  crashea al cargar el módulo: `SyntaxError: ... does not provide an export named 'default'`,
+  tirando abajo **apps/api** y **apps/worker** al arrancar (ambos importan `notifications`).
+  El typecheck no lo detectaba porque `esModuleInterop` sintetiza un default en compilación
+  que en runtime ESM no existe. Los `@types/web-push@3.6.4` ya declaran named exports, así
+  que el namespace import queda correctamente tipado.
+- **Impacto / archivos:** `packages/core/src/modules/notifications/infra/push-sender.ts`.
+- **Verificación:** `pnpm --filter @3b/core typecheck` verde; api levanta en `:8787`
+  (`/openapi.json` 200, `/v1/me` 401) y worker arranca (sweep + outbox→valkey + statements)
+  tras el reload de `tsx watch`.
+- **Estado para retomar:** sin pendientes. Si en el futuro se fija `web-push` a v3 (CJS),
+  habría que volver al default import; mientras siga en v4, mantener el namespace import.
+- **Relacionado:** entrada **M8d.1** (infra de Web Push).
+
 ## 2026-11-08 · _(este commit)_ · feat — M8e: presupuesto de rendimiento del JS inicial (CIERRA M8)
 
 - **Qué:** un **presupuesto de JS inicial** medible y aplicado en CI: la web no puede pasar de
