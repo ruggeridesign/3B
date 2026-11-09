@@ -1,0 +1,240 @@
+import { auth } from '@3b/auth';
+import { loadEnv } from '@3b/config';
+import {
+  type ApiVariables,
+  canManageCatalog,
+  canManageStore,
+  dbErrorResponse,
+} from '@3b/core/http';
+import { adminRouter, IMPERSONATE_COOKIE } from '@3b/core/modules/admin';
+import { billingRouter } from '@3b/core/modules/billing';
+import {
+  catalogRouter,
+  discoveryRouter,
+  getItemStore,
+} from '@3b/core/modules/catalog';
+import {
+  kycRouter,
+  meRouter,
+  readIsPlatformAdmin,
+} from '@3b/core/modules/identity';
+import { inventoryRouter } from '@3b/core/modules/inventory';
+import { type AuthorizeOwner, mediaRouter } from '@3b/core/modules/media';
+import { messagingRouter } from '@3b/core/modules/messaging';
+import { notificationsRouter } from '@3b/core/modules/notifications';
+import { ordersRouter } from '@3b/core/modules/orders';
+import { paymentsRouter } from '@3b/core/modules/payments';
+import { getShipment, shippingRouter } from '@3b/core/modules/shipping';
+import { socialRouter } from '@3b/core/modules/social';
+import { storeRouter } from '@3b/core/modules/store';
+import { systemRouter } from '@3b/core/modules/system';
+import { trackingRouter } from '@3b/core/modules/tracking';
+import { createAppDb, sql, withAppContext } from '@3b/db';
+import { createNodeWebSocket } from '@hono/node-ws';
+import { OpenAPIHono } from '@hono/zod-openapi';
+import { getCookie } from 'hono/cookie';
+import { cors } from 'hono/cors';
+import { createLive } from './live';
+import { createLocalMediaStorage, localMediaRouter } from './local-media';
+
+/**
+ * Construye la app de la API (Hono + routers de `@3b/core`) SIN abrir el socket.
+ * `index.ts` la usa para servir en producción/dev; los tests de integración la
+ * usan in-process vía `app.request('/v1/...')` sin levantar un servidor HTTP.
+ *
+ * Devuelve también `injectWebSocket` (para el entrypoint), el `port` de env y un
+ * `close()` que libera la conexión de DB y el cliente Valkey (cleanup en tests).
+ */
+export function createApiApp() {
+  const env = loadEnv();
+  // Conexión con el rol `app` (mínimo privilegio, sujeto a RLS) para el runtime.
+  const appDb = createAppDb(env.APP_DATABASE_URL);
+
+  const app = new OpenAPIHono<{ Variables: ApiVariables }>();
+
+  // Rastreo en vivo (M6c.2b): publisher Valkey (pub/sub + GEO) + WebSockets.
+  const live = createLive(env.VALKEY_URL);
+  const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
+
+  // Storage de media: en dev es local (disco + URLs firmadas). En prod, R2.
+  const mediaStorage = createLocalMediaStorage({
+    dir: env.MEDIA_LOCAL_DIR,
+    secret: env.MEDIA_SIGN_SECRET,
+    publicUrl: env.MEDIA_PUBLIC_URL,
+  });
+
+  // Autorización de media por entidad (inyectada en el router de media para no
+  // acoplar media→store/catalog): tienda = poder administrarla; usuario = uno mismo;
+  // ítem = poder gestionar el catálogo de la tienda dueña del ítem.
+  const authorizeOwner: AuthorizeOwner = async (db, userId, type, ownerId) => {
+    if (type === 'store') return canManageStore(db, ownerId);
+    if (type === 'user') return ownerId === userId;
+    const storeId = await getItemStore(db, ownerId);
+    return storeId ? canManageCatalog(db, storeId) : false;
+  };
+
+  app.get('/', (c) => c.json({ name: '3b-api', ok: true }));
+
+  // Better Auth: resuelve /api/auth/** (registro, login, sesión, OAuth…).
+  app.on(['GET', 'POST'], '/api/auth/*', (c) => auth.handler(c.req.raw));
+
+  // Rutas de archivos locales (storage de dev). FUERA de /v1: la subida se
+  // autentica por el token firmado y la lectura es pública. Como la web (3000)
+  // sube directo acá (8787), habilitamos CORS para el PUT cross-origin.
+  app.use(
+    '/media-local/*',
+    cors({ origin: env.WEB_URL, allowMethods: ['GET', 'PUT', 'OPTIONS'] }),
+  );
+  app.route(
+    '/media-local',
+    localMediaRouter({
+      dir: env.MEDIA_LOCAL_DIR,
+      secret: env.MEDIA_SIGN_SECRET,
+      publicUrl: env.MEDIA_PUBLIC_URL,
+    }),
+  );
+
+  // Middleware de auth/contexto para /v1/**: lee la sesión (servidor), abre una
+  // transacción con contexto RLS y resuelve la capacidad global de plataforma.
+  // Nunca confía en identificadores enviados por el cliente.
+  app.use('/v1/*', async (c, next) => {
+    const session = await auth.api.getSession({ headers: c.req.raw.headers });
+    if (!session) {
+      c.set('userId', null);
+      c.set('db', null);
+      c.set('isPlatformAdmin', false);
+      c.set('realUserId', null);
+      c.set('realIsPlatformAdmin', false);
+      c.set('impersonatedBy', null);
+      return next();
+    }
+    const realUserId = session.user.id;
+    return withAppContext(appDb.db, { userId: realUserId }, async (tx) => {
+      const realIsAdmin = await readIsPlatformAdmin(tx, realUserId);
+
+      // "Ver como": si hay cookie de impersonación y el usuario REAL es admin de
+      // plataforma, el usuario EFECTIVO pasa a ser el objetivo (contexto RLS).
+      const target = getCookie(c, IMPERSONATE_COOKIE);
+      let effectiveUserId = realUserId;
+      let impersonatedBy: ApiVariables['impersonatedBy'] = null;
+      if (target && realIsAdmin && target !== realUserId) {
+        effectiveUserId = target;
+        impersonatedBy = { id: realUserId, email: session.user.email };
+        await tx.execute(
+          sql`select set_config('app.user_id', ${target}, true)`,
+        );
+      }
+      const effIsAdmin = impersonatedBy
+        ? await readIsPlatformAdmin(tx, effectiveUserId)
+        : realIsAdmin;
+
+      c.set('realUserId', realUserId);
+      c.set('realIsPlatformAdmin', realIsAdmin);
+      c.set('userId', effectiveUserId);
+      c.set('isPlatformAdmin', effIsAdmin);
+      c.set('impersonatedBy', impersonatedBy);
+      c.set('db', tx);
+      await next();
+    });
+  });
+
+  // Routers http de los módulos de core bajo /v1.
+  app.route('/v1', systemRouter());
+  app.route('/v1', meRouter());
+  app.route('/v1', kycRouter());
+  app.route('/v1', adminRouter());
+  app.route('/v1', storeRouter({ paymentsEncKey: env.PAYMENTS_ENC_KEY }));
+  app.route('/v1', mediaRouter({ storage: mediaStorage, authorizeOwner }));
+  app.route('/v1', catalogRouter());
+  app.route(
+    '/v1',
+    discoveryRouter({ mediaPublicUrl: (key) => mediaStorage.publicUrl(key) }),
+  );
+  app.route('/v1', inventoryRouter());
+  app.route('/v1', ordersRouter());
+  app.route('/v1', paymentsRouter());
+  app.route('/v1', messagingRouter());
+  app.route(
+    '/v1',
+    notificationsRouter({
+      vapid: {
+        publicKey: env.VAPID_PUBLIC_KEY,
+        privateKey: env.VAPID_PRIVATE_KEY,
+        subject: env.VAPID_SUBJECT,
+      },
+    }),
+  );
+  app.route('/v1', socialRouter());
+  app.route('/v1', shippingRouter());
+  app.route('/v1', billingRouter());
+  app.route(
+    '/v1',
+    trackingRouter({ onPing: (id, ping) => void live.publishPing(id, ping) }),
+  );
+
+  // WebSocket de rastreo en vivo (FUERA de /v1: no pasa por el middleware RLS). Se
+  // autentica con la sesión y autoriza por la visibilidad del envío (RLS), luego se
+  // suscribe al canal Valkey del envío y reenvía cada ping al navegador.
+  app.get(
+    '/ws/shipments/:id/track',
+    upgradeWebSocket((c) => {
+      const id = c.req.param('id') ?? '';
+      let sub: ReturnType<typeof live.subscriber> | null = null;
+      return {
+        async onOpen(_evt, ws) {
+          const session = await auth.api.getSession({
+            headers: c.req.raw.headers,
+          });
+          if (!session) return ws.close(1008, 'no auth');
+          const visible = await withAppContext(
+            appDb.db,
+            { userId: session.user.id },
+            (tx) => getShipment(tx, id),
+          );
+          if (!visible) return ws.close(1008, 'forbidden');
+          sub = live.subscriber();
+          await sub.subscribe(live.channel(id));
+          sub.on('message', (_ch, msg) => ws.send(msg));
+        },
+        onClose() {
+          sub?.disconnect();
+        },
+      };
+    }),
+  );
+
+  // Documento OpenAPI (contrato de la API).
+  app.doc('/openapi.json', {
+    openapi: '3.1.0',
+    info: { title: '3B API', version: '0.0.0' },
+  });
+
+  // UI de documentación (Scalar vía CDN, sin dependencia npm).
+  app.get('/docs', (c) =>
+    c.html(
+      '<!doctype html><html lang="es"><head><meta charset="utf-8">' +
+        '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+        '<title>3B API · Docs</title></head><body>' +
+        '<script id="api-reference" data-url="/openapi.json"></script>' +
+        '<script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>' +
+        '</body></html>',
+    ),
+  );
+
+  // Manejo central de errores: traduce errores de Postgres (RLS, únicos, FK…) a
+  // respuestas HTTP coherentes. Ver `@3b/core/http` → dbErrorResponse.
+  app.onError((err, c) => {
+    const mapped = dbErrorResponse(err);
+    if (mapped) return c.json({ error: mapped.error }, mapped.status);
+    console.error('[3b-api] error no manejado:', err);
+    return c.json({ error: 'Error interno' }, 500);
+  });
+
+  // Libera recursos externos (DB + Valkey). Para el cleanup de tests in-process.
+  async function close(): Promise<void> {
+    await live.close();
+    await appDb.client.end();
+  }
+
+  return { app, injectWebSocket, port: env.API_PORT, close };
+}

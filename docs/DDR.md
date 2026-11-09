@@ -254,6 +254,39 @@
 
 ---
 
+## 2026-11-09 · _(este commit)_ · test — Capa de tests de API/HTTP (routers Hono) [Fase 1 de testing]
+
+- **Qué:** nueva capa de tests de integración que ejercita la **app Hono completa
+  in-process** (`app.request('/v1/...')`) contra Better Auth + DB reales. 19 tests en
+  4 archivos: `/v1/me` por usuario (matriz de capacidades), gating 401/403,
+  **impersonación** ("Ver como": refleja al objetivo, `/admin/users` 200 aun
+  impersonando — regresión del bug reciente, no-admin 403, stop) y `/v1/orders`
+  (checkout del Maker: 201/200, falta Idempotency-Key→400, body inválido→4xx, 401).
+- **Por qué:** era el hueco más grande: la lógica/RLS ya estaba cubierta por los ~41
+  tests de integración de core, pero el **middleware HTTP** (sesión → contexto RLS →
+  capacidades → impersonación → validación zod → códigos de estado) no se probaba —
+  justo donde vivió el bug de "Ver como". Primera fase del plan de testing acordado
+  (capas E2E + API + componentes + checklist; rutas críticas primero).
+- **Refactor habilitante:** se extrajo la construcción de la app a
+  `apps/api/src/app.ts` (`createApiApp(): { app, injectWebSocket, port, close }`);
+  `index.ts` quedó como entrypoint fino (solo `serve()` + `injectWebSocket()`). Así
+  los tests usan la app sin abrir un socket; `close()` libera DB + Valkey.
+- **Harness:** `apps/api/test/integration/helpers/client.ts` — cliente con "cookie
+  jar" que loguea vía `POST /api/auth/sign-in/email` (credenciales del seed,
+  `Password123!`) y reenvía cookies (sesión + impersonación) como un navegador.
+  Constantes de seed (emails + UUIDs) reutilizables.
+- **Impacto / archivos:** `apps/api/src/{app.ts,index.ts}`,
+  `apps/api/test/integration/**`, `apps/api/vitest{,.integration}.config.ts`,
+  `apps/api/package.json` (+scripts `test`/`test:integration`).
+- **Verificación:** `pnpm --filter @3b/api test:integration` → 19/19 verde;
+  `pnpm check` verde (lint/typecheck/unit/boundaries). Entran solos a
+  `pnpm test:integration` (vía `pnpm -r`) y al job `integration` de CI.
+- **Estado para retomar:** siguen las fases 2 (componentes web RTL), 3 (E2E
+  Playwright) y 4 (checklist manual + strategy.md + wiring de CI). Plan completo en el
+  documento de plan aprobado.
+- **Relacionado:** entrada de "Ver como" por rol; `packages/core/test/integration/*`
+  (patrón de seed/`withAppContext`).
+
 ## 2026-11-09 · _(este commit)_ · feat/fix — "Ver como" por ROL (Maker/Seller/Mover/Comunidad/Admin)
 
 - **Qué:** el selector **"Ver como"** del navbar dejó de listar usuarios sueltos y
