@@ -101,3 +101,50 @@ const serwist = new Serwist({
 });
 
 serwist.addEventListeners();
+
+// ── Web Push (M8d) ──────────────────────────────────────────────────────────
+// Muestra la notificación recibida (payload JSON de PushPayload) y, al tocarla,
+// enfoca una pestaña existente (navegándola a la URL) o abre una nueva.
+self.addEventListener('push', (event) => {
+  let data: {
+    title?: string;
+    body?: string;
+    url?: string;
+    tag?: string;
+  } | null = null;
+  try {
+    data = event.data?.json() ?? null;
+  } catch {
+    data = null;
+  }
+  event.waitUntil(
+    self.registration.showNotification(data?.title ?? '3B', {
+      body: data?.body ?? '',
+      icon: '/icons/192.png',
+      badge: '/icons/192.png',
+      tag: data?.tag,
+      data: { url: data?.url ?? '/' },
+    }),
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const data = event.notification.data as { url?: string } | undefined;
+  const url = data?.url ?? '/';
+  event.waitUntil(
+    (async () => {
+      const all = await self.clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true,
+      });
+      const client = all[0] as WindowClient | undefined;
+      if (client) {
+        await client.focus();
+        await client.navigate(url).catch(() => null);
+        return;
+      }
+      await self.clients.openWindow(url);
+    })(),
+  );
+});

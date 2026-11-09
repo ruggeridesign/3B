@@ -81,6 +81,28 @@ export const kycSubmissions = identity.table(
   ],
 );
 
+/**
+ * Suscripción de Web Push (M8d): un endpoint por navegador/dispositivo de un
+ * usuario. `endpoint` es único (upsert idempotente al re-suscribir el mismo
+ * navegador); `p256dh`/`auth` son las claves que cifran el payload. RLS: cada
+ * usuario gestiona solo las suyas (policies en la migración).
+ */
+export const pushSubscriptions = identity.table(
+  'push_subscriptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    endpoint: text('endpoint').notNull().unique(),
+    p256dh: text('p256dh').notNull(),
+    auth: text('auth').notNull(),
+    userAgent: text('user_agent'),
+    ...timestamps,
+  },
+  (t) => [index('push_subs_user_idx').on(t.userId)],
+);
+
 // ── Tablas de Better Auth (mapeadas sobre identity.users; sin duplicar) ──
 // Las gestiona SOLO Better Auth con la conexión owner (bypassa RLS); el rol
 // `app` no recibe grants sobre ellas.

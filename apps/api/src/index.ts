@@ -21,6 +21,7 @@ import {
 import { inventoryRouter } from '@3b/core/modules/inventory';
 import { type AuthorizeOwner, mediaRouter } from '@3b/core/modules/media';
 import { messagingRouter } from '@3b/core/modules/messaging';
+import { notificationsRouter } from '@3b/core/modules/notifications';
 import { ordersRouter } from '@3b/core/modules/orders';
 import { paymentsRouter } from '@3b/core/modules/payments';
 import { getShipment, shippingRouter } from '@3b/core/modules/shipping';
@@ -143,6 +144,16 @@ app.route('/v1', inventoryRouter());
 app.route('/v1', ordersRouter());
 app.route('/v1', paymentsRouter());
 app.route('/v1', messagingRouter());
+app.route(
+  '/v1',
+  notificationsRouter({
+    vapid: {
+      publicKey: env.VAPID_PUBLIC_KEY,
+      privateKey: env.VAPID_PRIVATE_KEY,
+      subject: env.VAPID_SUBJECT,
+    },
+  }),
+);
 app.route('/v1', socialRouter());
 app.route('/v1', shippingRouter());
 app.route('/v1', billingRouter());

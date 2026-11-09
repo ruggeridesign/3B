@@ -63,6 +63,20 @@ const envSchema = z.object({
     .min(16)
     .default('dev-only-media-sign-secret-0123456789'),
   MEDIA_PUBLIC_URL: z.string().url().default('http://localhost:8787'),
+
+  // Web Push (VAPID, M8d). El par de claves firma los envíos de push; la pública se
+  // expone a la web para suscribirse. Defaults SOLO para desarrollo (par generado
+  // localmente); en producción se deben sobrescribir (p. ej.
+  // `npx web-push generate-vapid-keys`). `VAPID_SUBJECT` es un mailto:/URL de contacto.
+  VAPID_PUBLIC_KEY: z
+    .string()
+    .default(
+      'BEqllyQ7SBVTG3T5Lg5lZYvOLc70ywG9NQo9hfYa-q7QmyuWl6XLYtHbQ-Bad0pUYzYP7EuE6_SWVSvjNVMypTA',
+    ),
+  VAPID_PRIVATE_KEY: z
+    .string()
+    .default('Pw4yUlWQLRNGXrnc_GTEW9TcDVU8ExeYwJCNupCNQ7Y'),
+  VAPID_SUBJECT: z.string().default('mailto:dev@3b.local'),
 });
 
 export type Env = z.infer<typeof envSchema>;

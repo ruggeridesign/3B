@@ -41,7 +41,7 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
   **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
   la proyección de ranking con señales de comportamiento).
-- **M8 · PWA — EN CURSO.** **M8a + M8b + M8c cerrados.** **M8a:** la web es **instalable** y
+- **M8 · PWA — EN CURSO.** **M8a + M8b + M8c + M8d.1 cerrados.** **M8a:** la web es **instalable** y
   abre **offline**. Service worker con `@serwist/turbopack` (camino correcto para el build
   Turbopack de Next 16; `@serwist/next`/webpack no aplica), SW en `app/sw.ts` servido por
   `app/serwist/[path]/route.ts`, `manifest.webmanifest` (`app/manifest.ts`, crema `#f4f2e0`),
@@ -58,10 +58,15 @@
   crear tienda); el feedback de encolado es un **toast global** (`QueuedToast`) que dispara
   `mutate()`. Excluidos (documentado): subidas con `FormData`/media, pings GPS, "leído" del chat,
   impersonation/admin, y el checkout (clave de idempotencia propia; igual se encola, aviso en el
-  `catch` offline). **Siguiente: M8d** — push (VAPID): tabla de suscripciones + API subscribe/
-  unsubscribe + envío desde worker/outbox + permiso en web + handlers `push`/`notificationclick`
-  en el SW. Luego M8e (presupuesto <170 KB JS inicial / LCP < 2,5 s). Mejora futura: purgar la
-  caché `api-v1` al cerrar sesión.
+  `catch` offline). **M8d.1 — push (VAPID), infra:** módulo nuevo `notifications` en core (Web
+  Push con `web-push`): tabla `identity.push_subscriptions` (upsert por endpoint, RLS por
+  usuario), API `GET /notifications/vapid-public-key` + `POST`/`DELETE /notifications/subscriptions`
+  + `POST /notifications/test` (auto-test), handlers `push`/`notificationclick` en `app/sw.ts`,
+  y UI `PushToggle` en `/ajustes` (permiso + suscribir + prueba). Claves VAPID por env (defaults
+  de dev). **Siguiente: M8d.2** — enviar push ante **eventos de dominio** (emitir al outbox +
+  worker → `notifyUser`); ahí se decide **qué eventos notifican** (producto). Luego M8e
+  (presupuesto <170 KB JS inicial / LCP < 2,5 s). Mejora futura: purgar la caché `api-v1` al
+  cerrar sesión.
 - **M7 · Billing + panel de comunidad — CERRADO.** **M7a/M7b/M7c/M7d** completos (módulo
   `billing` + identity/comunidad). `plans` + `subscriptions` (una por tienda; `trial` por
   trigger; la cambia un admin); `fee_accruals` (polimórfico `store`|`mover`): al `completado`
@@ -234,6 +239,52 @@
   unidad lógica; cada uno con su entrada en este DDR.
 
 ---
+
+## 2026-11-08 · _(este commit)_ · feat — M8d.1: Web Push (VAPID) — infraestructura + auto-test
+
+- **Qué:** la app puede **suscribirse a notificaciones push** y enviarse una **de prueba** a sus
+  propios dispositivos. Primera rebanada de M8d (push); el envío por eventos de dominio es M8d.2.
+- **Por qué:** roadmap M8 ("push / VAPID"). La infra (claves, tabla, API, permiso, service worker)
+  es independiente de *qué* eventos notifican, así que se construye y verifica primero con un
+  auto-test; la decisión de producto (eventos) queda para M8d.2.
+- **Impacto / archivos:**
+  - **DB:** `identity.push_subscriptions` (`packages/db/src/schema/identity.ts`) + migración
+    `0040_rapid_vapor.sql` (tabla + **RLS**: cada usuario gestiona solo las suyas,
+    `user_id = authz.current_user_id()`; admin de plataforma puede leerlas) + grants a `app`.
+    `endpoint` único (upsert idempotente).
+  - **Contracts:** `packages/contracts/src/notifications.ts` (`PushSubscriptionInput`, `PushKeys`,
+    `DeletePushSubscriptionInput`, `VapidPublicKey`, `PushPayload`).
+  - **Core (módulo nuevo `notifications`):** `infra/subscription-repo` (upsert/delete/list),
+    `infra/push-sender` (`web-push` + VAPID; mapea 404/410 a `gone` para purgar),
+    `application/notify-user` (envía a todas las suscripciones y purga las muertas), `http/routes`
+    (vapid-public-key, subscribe, unsubscribe, test). Export `./modules/notifications`.
+  - **API:** monta `notificationsRouter({ vapid })` con las claves de env.
+  - **Config:** `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` (defaults SOLO de dev).
+  - **Web:** `app/sw.ts` gana handlers `push` (showNotification) y `notificationclick` (enfoca/abre
+    la URL). `PushToggle` (`_components/push-toggle.tsx`) + página `/ajustes` + ítem en el navbar.
+- **Decisiones de diseño:**
+  - **Módulo `notifications` + `web-push` en core:** la lógica de envío vive en core (infra);
+    core solo corre en Node (api/worker), no se bundlea al navegador.
+  - **Clave pública por endpoint (no `NEXT_PUBLIC`):** la web la pide a la API al suscribirse;
+    una sola fuente, sin env de build en la web.
+  - **Esquemas OpenAPI inline (hono `z`):** los routers no llaman `.openapi()` sobre esquemas de
+    `@3b/contracts` (zod plano, sin ese método en runtime); se redeclaran con la `z` de
+    `@hono/zod-openapi` (patrón del repo).
+  - **SW desactivado en dev → push solo en build/instalada:** `PushToggle` muestra "no disponible"
+    si no hay SW registrado.
+- **Verificación:** `pnpm check` **verde** (lint, typecheck 10/10, unit 19/19, boundaries **685
+  módulos**). `next build` OK (`/ajustes` + SW con push; 31 entradas de precache). Smoke del
+  `/serwist/sw.js` servido: contiene `showNotification`/`notificationclick`/`push`. **DB:
+  migración 0040 aplicada** (`pnpm db:migrate`) y `pnpm test:integration` **verde: db 6/6 + core
+  38 archivos / 133 tests**, incluido el nuevo `notifications.test.ts` (upsert idempotente +
+  aislamiento RLS: un tercero no ve ni borra la suscripción ajena).
+- **Estado para retomar:** **M8d.1 cerrado.** Siguiente: **M8d.2** — emitir eventos de dominio al
+  `platform.outbox` en las transiciones relevantes y que el **worker** los consuma y llame a
+  `notifyUser` (owner) con la carga adecuada. **Decisión pendiente (producto):** qué eventos
+  notifican y a quién (p. ej. pedido nuevo → tienda; pago confirmado / envío asignado / entregado
+  → comprador; mensaje de chat → contraparte). Luego M8e (presupuesto de rendimiento). Nota: hoy
+  solo `stock.changed` se emite al outbox; M8d.2 agrega los eventos elegidos.
+- **Relacionado:** ROADMAP M8; entradas M8a/M8b/M8c; ADR-002 (modelo de datos).
 
 ## 2026-11-07 · _(este commit)_ · feat — M8c.2: migración de mutaciones al helper + toast global
 

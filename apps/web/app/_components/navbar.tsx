@@ -110,6 +110,9 @@ export function Navbar({ me }: { me: MeResponse }) {
                 <Link href="/mover">Convertite en Mover</Link>
               </DropdownMenuItem>
             )}
+            <DropdownMenuItem asChild>
+              <Link href="/ajustes">Ajustes</Link>
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onLogout}>
               Cerrar sesión

@@ -16,6 +16,7 @@
     "./modules/catalog": "./src/modules/catalog/index.ts",
     "./modules/inventory": "./src/modules/inventory/index.ts",
     "./modules/messaging": "./src/modules/messaging/index.ts",
+    "./modules/notifications": "./src/modules/notifications/index.ts",
     "./modules/orders": "./src/modules/orders/index.ts",
     "./modules/payments": "./src/modules/payments/index.ts",
     "./modules/platform": "./src/modules/platform/index.ts",
@@ -32,9 +33,11 @@
     "@3b/contracts": "workspace:*",
     "@3b/db": "workspace:*",
     "@hono/zod-openapi": "^1.6.3",
-    "hono": "^4.13.14"
+    "hono": "^4.13.14",
+    "web-push": "^4.0.0"
   },
   "devDependencies": {
-    "@3b/config": "workspace:*"
+    "@3b/config": "workspace:*",
+    "@types/web-push": "^3.6.4"
   }
 }

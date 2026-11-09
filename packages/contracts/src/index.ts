@@ -108,6 +108,13 @@ export {
   MessageThread,
   SendMessageInput,
 } from './messaging';
+export {
+  DeletePushSubscriptionInput,
+  PushKeys,
+  PushPayload,
+  PushSubscriptionInput,
+  VapidPublicKey,
+} from './notifications';
 export type { OrderTransition } from './orders';
 export {
   CheckoutLineInput,
