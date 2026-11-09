@@ -25,10 +25,13 @@
     "db:migrate": "pnpm --filter @3b/db migrate",
     "db:seed": "pnpm --filter @3b/db seed",
     "db:reset": "pnpm --filter @3b/db reset && pnpm --filter @3b/auth seed",
-    "test:integration": "pnpm db:reset && pnpm -r test:integration"
+    "test:integration": "pnpm db:reset && pnpm -r test:integration",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.3",
+    "@playwright/test": "^1.65.0",
     "@types/node": "^26.6.6",
     "dependency-cruiser": "^18.7.0",
     "turbo": "^2.11.10",

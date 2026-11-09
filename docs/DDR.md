@@ -254,6 +254,35 @@
 
 ---
 
+## 2026-11-09 · _(este commit)_ · test — E2E de navegador con Playwright (por rol) [Fase 3 de testing]
+
+- **Qué:** suite E2E que maneja **Chromium** contra la app real (web :3000 + api
+  :8787 + DB). 12 tests: un proyecto `setup` que loguea a los 5 usuarios del seed y
+  guarda su sesión (`storageState`), y 7 flujos que la reusan — redirect sin sesión +
+  login (auth), **Maker** (home → catálogo "Comprar"), **Seller** (Mi Tienda con sus
+  tiendas), **Mover** (cola de solicitudes), **admin de Comunidad** (panel, sin
+  redirect) y **admin de Plataforma** ("Ver como" → cambia a Mover y vuelve a su
+  cuenta — el flujo estrella, verificado también a mano).
+- **Por qué:** es la capa que más se parece a "probar toda la app para todos los
+  usuarios": valida end-to-end que cada rol ve y navega su interfaz. Complementa la
+  fase 1 (API) y 2 (componentes).
+- **Diseño:** `playwright.config.ts` con `webServer` (levanta api+web; en local reusa
+  los que ya corren) y proyectos `setup` → `chromium` (dependencia). `e2e/roles.ts`
+  centraliza credenciales + rutas de `storageState`; `e2e/auth.setup.ts` loguea por la
+  UI (`#email`/`#password`/"Entrar"); `e2e/flows/*.spec.ts` usan la sesión del rol.
+  Aserciones sobre anclas estables (h1 por página, banner de impersonación).
+- **Impacto / archivos:** `playwright.config.ts`, `e2e/**`, `package.json` (scripts
+  `test:e2e`/`test:e2e:ui`), `.gitignore` (sesiones/reportes). devDep
+  `@playwright/test`; navegador vía `pnpm exec playwright install chromium`.
+- **Verificación:** `pnpm test:e2e` → 12/12 verde (DB sembrada + servers arriba).
+  `pnpm run lint` sin errores.
+- **Estado para retomar:** falta la fase 4 (checklist manual + strategy.md + job `e2e`
+  en CI). La suite E2E arranca con flujos de "camino feliz" por rol; se extiende con
+  transacciones más profundas (checkout completo, aceptar pedido, entregar) a medida
+  que se mapea cada UI. Correr requiere `pnpm db:up` + DB sembrada y
+  `pnpm exec playwright install chromium`.
+- **Relacionado:** "Ver como" por rol; fases 1 y 2 de testing.
+
 ## 2026-11-09 · _(este commit)_ · test — Tests de componentes web (RTL + jsdom) [Fase 2 de testing]
 
 - **Qué:** se montó Vitest + Testing Library (jsdom) en `apps/web` (antes con 0

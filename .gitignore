@@ -19,6 +19,12 @@ AGENTS.md
 .cache
 .turbo
 
+# Playwright (E2E): sesiones guardadas, reportes y artefactos
+e2e/.auth/
+playwright-report/
+test-results/
+playwright/.cache/
+
 # Subidas locales de media (storage de dev; en prod va a R2)
 .media-uploads/
 
