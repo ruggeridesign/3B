@@ -39,7 +39,13 @@ test('Maker: checkout completo (catálogo → carrito → pedido en "Mis pedidos
   const order = (await resp.json()) as { number: number; status: string };
   expect(order.status).toBe('realizado');
 
-  // 4) El pedido recién creado aparece en "Mis pedidos".
+  // 4) La confirmación se muestra y PERSISTE aunque el carrito quede vacío.
+  await expect(
+    page.getByText(new RegExp(`Pedido\\s+#${order.number}\\s+realizado`)),
+  ).toBeVisible();
+  await expect(page.getByRole('link', { name: /Ver pedido/ })).toBeVisible();
+
+  // 5) El pedido recién creado aparece en "Mis pedidos".
   await page.goto('/comprar/pedidos');
   await expect(
     page.getByRole('heading', { level: 1, name: 'Mis pedidos' }),

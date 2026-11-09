@@ -26,6 +26,8 @@ function subtotalOf(lines: CartLine[]): string {
 }
 
 interface Confirmed {
+  storeId: string;
+  storeName: string;
   number: number;
   id: string;
 }
@@ -34,9 +36,11 @@ interface Confirmed {
 function StoreGroup({
   storeId,
   lines,
+  onConfirmed,
 }: {
   storeId: string;
   lines: CartLine[];
+  onConfirmed: (confirmed: Confirmed) => void;
 }) {
   const { setQty, remove, clearStore } = useCart();
   const router = useRouter();
@@ -46,7 +50,6 @@ function StoreGroup({
   const [addr, setAddr] = useState({ line1: '', phone: '', notes: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<Confirmed | null>(null);
   // Clave de idempotencia por firma del pedido: un reintento del mismo contenido
   // reusa la clave (no duplica); si cambia el carrito, se genera otra.
   const idem = useRef<{ sig: string; key: string } | null>(null);
@@ -94,7 +97,9 @@ function StoreGroup({
         error?: string;
       } | null;
       if (res.ok && data?.id && data.number != null) {
-        setDone({ number: data.number, id: data.id });
+        // La confirmación la muestra el padre (Carrito): así sobrevive a que
+        // `clearStore` vacíe las líneas y desmonte este StoreGroup.
+        onConfirmed({ storeId, storeName, number: data.number, id: data.id });
         clearStore(storeId);
         router.refresh();
         return;
@@ -111,23 +116,6 @@ function StoreGroup({
     } finally {
       setLoading(false);
     }
-  }
-
-  if (done) {
-    return (
-      <section className="glass space-y-2 rounded-lg p-4">
-        <h2 className="font-medium text-foreground">{storeName}</h2>
-        <p className="text-foreground text-sm">
-          Pedido <span className="font-medium">#{done.number}</span> realizado.
-        </p>
-        <Link
-          href={`/comprar/pedidos/${done.id}`}
-          className="text-sm text-foreground hover:underline"
-        >
-          Ver pedido →
-        </Link>
-      </section>
-    );
   }
 
   return (
@@ -227,8 +215,29 @@ function StoreGroup({
   );
 }
 
+/** Confirmación de un pedido realizado. La muestra el Carrito (no el StoreGroup),
+ * para que persista aunque el carrito quede vacío tras confirmar. */
+function ConfirmationCard({ confirmed }: { confirmed: Confirmed }) {
+  return (
+    <section className="glass space-y-2 rounded-lg p-4">
+      <h2 className="font-medium text-foreground">{confirmed.storeName}</h2>
+      <p className="text-foreground text-sm">
+        Pedido <span className="font-medium">#{confirmed.number}</span>{' '}
+        realizado.
+      </p>
+      <Link
+        href={`/comprar/pedidos/${confirmed.id}`}
+        className="text-sm text-foreground hover:underline"
+      >
+        Ver pedido →
+      </Link>
+    </section>
+  );
+}
+
 export default function Carrito() {
   const { lines } = useCart();
+  const [confirmed, setConfirmed] = useState<Confirmed[]>([]);
 
   const byStore = new Map<string, CartLine[]>();
   for (const l of lines) {
@@ -250,7 +259,7 @@ export default function Carrito() {
         </p>
       </div>
 
-      {groups.length === 0 ? (
+      {groups.length === 0 && confirmed.length === 0 ? (
         <p className="text-muted-foreground text-sm">
           Tu carrito está vacío.{' '}
           <Link href="/comprar" className="text-foreground hover:underline">
@@ -260,8 +269,16 @@ export default function Carrito() {
         </p>
       ) : (
         <div className="space-y-4">
+          {confirmed.map((c) => (
+            <ConfirmationCard key={c.id} confirmed={c} />
+          ))}
           {groups.map(([storeId, storeLines]) => (
-            <StoreGroup key={storeId} storeId={storeId} lines={storeLines} />
+            <StoreGroup
+              key={storeId}
+              storeId={storeId}
+              lines={storeLines}
+              onConfirmed={(c) => setConfirmed((prev) => [...prev, c])}
+            />
           ))}
         </div>
       )}

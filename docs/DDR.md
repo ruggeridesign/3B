@@ -258,6 +258,24 @@
 
 ---
 
+## 2026-11-09 · _(este commit)_ · fix — confirmación post-checkout persistente + aserción E2E
+
+- **Qué:** la confirmación "Pedido #N realizado · Ver pedido →" ahora se muestra al
+  confirmar una compra. Antes la pintaba el `StoreGroup`, pero `clearStore()` vaciaba
+  el carrito y **desmontaba** ese componente antes de que se viera (el usuario quedaba
+  en "Tu carrito está vacío"). Se **levantó** la confirmación al `Carrito`: el padre
+  guarda los pedidos confirmados (callback `onConfirmed`) y los renderiza con un
+  `ConfirmationCard`, así sobreviven al vaciado del carrito.
+- **Por qué:** cerrar el bug de UX que destapó el E2E transaccional del checkout; el
+  pedido ya se creaba bien, pero no había feedback de éxito en pantalla.
+- **Impacto / archivos:** `apps/web/app/(shell)/comprar/carrito/page.tsx` (nuevo
+  `ConfirmationCard`, estado `confirmed` en `Carrito`, `StoreGroup` sin estado `done`),
+  `e2e/flows/checkout.spec.ts` (nueva aserción: la confirmación con el nº de pedido y
+  "Ver pedido →" quedan visibles tras confirmar).
+- **Verificación:** `pnpm check` verde; `pnpm test:e2e` → 13/13 (el checkout ahora
+  valida también la confirmación visible).
+- **Relacionado:** entrada previa (E2E transaccional del checkout, que reportó el bug).
+
 ## 2026-11-09 · _(este commit)_ · test — E2E transaccional del checkout completo (Maker)
 
 - **Qué:** `e2e/flows/checkout.spec.ts` recorre la compra de punta a punta como Maker
