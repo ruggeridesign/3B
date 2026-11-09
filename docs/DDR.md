@@ -40,8 +40,10 @@
   + seed), **Hito B** (Better Auth + RBAC con alcance + RLS + auditoría + tests de
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
   **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
-  la proyección de ranking con señales de comportamiento).
-- **M8 · PWA — EN CURSO.** **M8a + M8b + M8c + M8d cerrados.** Falta **M8e** (presupuesto de rendimiento). **M8a:** la web es **instalable** y
+  la proyección de ranking con señales de comportamiento), **M5** (pedido end-to-end),
+  **M6** (envíos + rastreo), **M7** (billing + panel de comunidad), **M8 · PWA** (instalable,
+  offline, cola, push, presupuesto).
+- **M8 · PWA — CERRADO.** **M8a..M8e** completos. **M8a:** la web es **instalable** y
   abre **offline**. Service worker con `@serwist/turbopack` (camino correcto para el build
   Turbopack de Next 16; `@serwist/next`/webpack no aplica), SW en `app/sw.ts` servido por
   `app/serwist/[path]/route.ts`, `manifest.webmanifest` (`app/manifest.ts`, crema `#f4f2e0`),
@@ -71,8 +73,14 @@
   `aceptado/rechazado/pago_confirmado/pago_rechazado/listo`), `shipment.assigned` (Mover +
   comprador) y `shipment.delivered` (comprador), y `message.created` (contraparte, excluye al
   remitente). Diseño **anti-duplicado**: `order.status_changed` excluye `en_envio`/`entregado`
-  (los cubren los triggers de envío). **Siguiente: M8e** — presupuesto de rendimiento (<170 KB JS
-  inicial / LCP < 2,5 s), cierra M8. Mejora futura: purgar la caché `api-v1` al cerrar sesión.
+  (los cubren los triggers de envío). **M8e — presupuesto de rendimiento (cierra M8):** script
+  `apps/web/scripts/check-budget.mjs` (`pnpm --filter @3b/web check:budget`) mide el **JS inicial**
+  (first load) desde `.next/build-manifest.json` y falla si supera **170 KB gzip**. Hoy: **129 KB
+  gzip** (margen 40 KB); el polyfill `nomodule` (38 KB) se reporta aparte (navegadores viejos). Job
+  `budget` nuevo en CI (build web + check). LCP < 2,5 s en 3G: objetivo apoyado por el bundle liviano;
+  su medición con Lighthouse queda manual/futura. **Siguiente hito: M9 · Capa de diseño / MVP.**
+  Mejora futura: purgar la caché `api-v1` al cerrar sesión; tightening de browserslist para achicar
+  el polyfill.
 - **M7 · Billing + panel de comunidad — CERRADO.** **M7a/M7b/M7c/M7d** completos (módulo
   `billing` + identity/comunidad). `plans` + `subscriptions` (una por tienda; `trial` por
   trigger; la cambia un admin); `fee_accruals` (polimórfico `store`|`mover`): al `completado`
@@ -245,6 +253,35 @@
   unidad lógica; cada uno con su entrada en este DDR.
 
 ---
+
+## 2026-11-08 · _(este commit)_ · feat — M8e: presupuesto de rendimiento del JS inicial (CIERRA M8)
+
+- **Qué:** un **presupuesto de JS inicial** medible y aplicado en CI: la web no puede pasar de
+  **170 KB gzip** de JS en el first load. Cierra M8 (PWA).
+- **Por qué:** roadmap M8 ("<170 KB JS inicial, LCP < 2,5 s en 3G"). Sin un guard, el bundle inicial
+  (que define el LCP en redes lentas) crece sin control a medida que se agregan features.
+- **Impacto / archivos (solo `apps/web` + CI):**
+  - `scripts/check-budget.mjs`: lee `.next/build-manifest.json`, junta el **grafo de módulos** del
+    first load (runtime/framework `rootMainFiles` + `otherChunks` de cada página, deduplicado),
+    suma el tamaño **gzip** y falla si supera el presupuesto. El polyfill `nomodule` se mide y
+    reporta **aparte** (solo lo bajan navegadores viejos → no es camino crítico). Sin deps nuevas
+    (`node:zlib`/`node:fs`).
+  - `package.json`: script `check:budget`.
+  - `.github/workflows/ci.yml`: job **`budget`** (build de la web + `check:budget`).
+- **Decisiones de diseño:**
+  - **Métrica = gzip del grafo de módulos moderno, sin el polyfill nomodule:** es lo que un
+    navegador actual realmente descarga en el camino crítico (y lo que pesa para el LCP en 3G).
+  - **Medir desde `build-manifest.json`, no parsear stdout:** el build de Turbopack no imprime la
+    tabla de "First Load JS"; los tamaños de los chunks en disco son la fuente estable.
+- **Verificación:** `pnpm check` **verde** (lint incl. el `.mjs`, typecheck 10/10, unit 19/19,
+  boundaries **698 módulos**). `pnpm --filter @3b/web check:budget`: **129.1 KB gzip** (margen
+  **40.9 KB**); polyfill nomodule 38.6 KB aparte. `next build` OK.
+- **Estado para retomar:** **M8 · PWA CERRADO** (instalable + offline resiliente + cola offline +
+  push por eventos + presupuesto). LCP < 2,5 s: objetivo apoyado por el bundle liviano; su medición
+  con Lighthouse (mobile, slow 3G, contra un build de producción) queda manual/CI-futura — no se
+  automatizó acá. **Siguiente hito: M9 · Capa de diseño / MVP.** Mejoras futuras: tightening de
+  browserslist para achicar el polyfill; purgar `api-v1` al cerrar sesión.
+- **Relacionado:** ROADMAP M8/M9; entradas M8a..M8d.2b.
 
 ## 2026-11-08 · _(este commit)_ · feat — M8d.2b: push de los eventos de dominio restantes (cierra M8d)
 

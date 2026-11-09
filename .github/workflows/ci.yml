@@ -2,6 +2,7 @@
 #   * check:       lint + typecheck + test unit + límites de módulos (sin DB).
 #   * integration: Postgres 17 + PostGIS de servicio → reset + migraciones + seed
 #                  → tests de aislamiento RLS (db) y de capacidades RBAC (core).
+#   * budget:      build de la web + presupuesto de JS inicial (M8e, <170 KB gzip).
 name: CI
 
 on:
@@ -28,6 +29,20 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+
+  budget:
+    name: budget (presupuesto de JS inicial)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @3b/web build
+      - run: pnpm --filter @3b/web check:budget
 
   integration:
     name: integration (RLS + RBAC contra DB real)
