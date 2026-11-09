@@ -4,9 +4,7 @@ import { deleteCookie, setCookie } from 'hono/cookie';
 import {
   type ApiVariables,
   realCtx,
-  requirePlatformAdmin,
   requireRealPlatformAdmin,
-  sessionCtx,
 } from '../../../http';
 import { listUsers, recordAudit } from '../infra/admin-store';
 
@@ -17,6 +15,9 @@ const adminUser = z.object({
   email: z.string(),
   name: z.string().nullable(),
   isPlatformAdmin: z.boolean(),
+  isSeller: z.boolean(),
+  isMover: z.boolean(),
+  isCommunityAdmin: z.boolean(),
 });
 const usersResponse = z
   .object({ users: z.array(adminUser) })
@@ -42,10 +43,10 @@ const errorResponses = {
 export function adminRouter() {
   const app = new OpenAPIHono<{ Variables: ApiVariables }>();
 
-  // Gate por capacidad (helpers reutilizables de @3b/core/http):
-  // - lista de usuarios → admin de plataforma EFECTIVO,
-  // - impersonación → admin de plataforma REAL (disponible aun impersonando).
-  app.use('/admin/users', requirePlatformAdmin);
+  // Gate por capacidad (helpers reutilizables de @3b/core/http): ambas acciones
+  // son del admin de plataforma REAL, así siguen disponibles mientras se
+  // impersona (el selector "Ver como" necesita listar para saltar entre roles).
+  app.use('/admin/users', requireRealPlatformAdmin);
   app.use('/admin/impersonate', requireRealPlatformAdmin);
 
   app.openapi(
@@ -63,10 +64,16 @@ export function adminRouter() {
       },
     }),
     async (c) => {
-      const { db, userId } = sessionCtx(c);
+      const { db, realUserId } = realCtx(c);
+      // Correr como el admin REAL aunque esté impersonando: el middleware fijó el
+      // contexto RLS al usuario efectivo, pero para ver a TODOS hay que volver al
+      // admin real (igual que al terminar la impersonación).
+      await db.execute(
+        sql`select set_config('app.user_id', ${realUserId}, true)`,
+      );
       const users = await listUsers(db);
       await recordAudit(db, {
-        actorId: userId,
+        actorId: realUserId,
         action: 'admin.users.list',
         metadata: { count: users.length },
       });

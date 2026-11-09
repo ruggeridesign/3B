@@ -254,6 +254,47 @@
 
 ---
 
+## 2026-11-09 · _(este commit)_ · feat/fix — "Ver como" por ROL (Maker/Seller/Mover/Comunidad/Admin)
+
+- **Qué:** el selector **"Ver como"** del navbar dejó de listar usuarios sueltos y
+  ahora cambia la app a la **interfaz de un rol** (Comprar/Maker, Mi Tienda/Seller,
+  Mover, Comunidad, o volver a Admin), impersonando a un **usuario representativo** de
+  ese rol. Permanece visible mientras se impersona para **saltar entre roles** sin
+  volver a admin primero.
+- **Por qué:** el flujo anterior obligaba a adivinar qué usuario tenía cada rol y, al
+  impersonar a un no-admin, `isPlatformAdmin` efectivo pasaba a `false` y el botón
+  **desaparecía** (había que "Volver a tu cuenta" para cambiar). Además el selector
+  nunca cargaba la lista (ver abajo), así que en la práctica no servía.
+- **Cambios clave:**
+  - **Backend** (`admin/infra/admin-store.ts` + `admin/http/routes.ts`): `listUsers`
+    devuelve capacidades por usuario (`isSeller`/`isMover`/`isCommunityAdmin`, por
+    subconsultas EXISTS). `/admin/users` pasó a gate de admin **real**
+    (`requireRealPlatformAdmin`) y **resetea el contexto RLS al admin real**
+    (`set_config('app.user_id', realUserId)`) para listar a todos **aun mientras se
+    impersona**.
+  - **Frontend** (`_components/ver-como.tsx` + `navbar.tsx`): dropdown por rol que
+    resuelve un representante (`pickRep`) desde `/admin/users`; el navbar muestra el
+    botón para el admin **real** (`isPlatformAdmin || impersonating`). Se marca el rol
+    "· actual" y se habilita "Admin · volver a tu cuenta" al impersonar.
+  - **Dos bugs de runtime que lo rompían:** (1) la carga de usuarios dependía de un
+    `onClick={load}` sobre el trigger de Radix que **no disparaba** → se migró a carga
+    **eager con `useEffect`** al montar; (2) `busy` quedaba en `true` tras el primer
+    cambio porque `router.refresh()` es un refresh **suave** (no desmonta el client
+    component) → se resetea con `try/finally`, habilitando el salto entre roles.
+- **Impacto / archivos:** `packages/core/src/modules/admin/{infra/admin-store.ts,http/routes.ts}`,
+  `apps/web/app/_components/{ver-como.tsx,navbar.tsx}`.
+- **Verificación:** `biome check` + typecheck (web/core) + boundaries verdes. En el
+  navegador (admin@3b.test): el dropdown lista los roles con su representante
+  (Lucia/Maker, Carlos/Seller, Pedro/Mover, Ana/Comunidad); elegir **Mover** cambia a
+  Pedro (banner + espacio "Mover"); salto directo **Mover→Seller** → Carlos; "Volver a
+  tu cuenta" → Admin. HTTP: `/admin/users` responde 200 con capacidades **aun
+  impersonando** (antes 403).
+- **Estado para retomar:** los representantes salen del seed (Maker-solo=Lucia,
+  Seller=Carlos/Marta, Mover=Pedro, Comunidad=Ana). Es una herramienta de admin/dev;
+  si en el futuro el seed cambia, `pickRep` sigue funcionando por capacidad (no por
+  email hardcodeado).
+- **Relacionado:** M1 ("Ver como" original), middleware de impersonación en `apps/api`.
+
 ## 2026-11-09 · _(este commit)_ · fix — `web-push` v4 es ESM: namespace import (arranque de api/worker)
 
 - **Qué:** `packages/core/.../notifications/infra/push-sender.ts` pasó de

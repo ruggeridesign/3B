@@ -85,7 +85,12 @@ export function Navbar({ me }: { me: MeResponse }) {
 
       <div className="ml-auto flex items-center gap-2">
         {me.capabilities.isMaker && <CartLink />}
-        {me.capabilities.isPlatformAdmin && <VerComo />}
+        {/* Admin REAL: isPlatformAdmin efectivo se pierde al impersonar a un
+            no-admin, pero `impersonating` solo lo setea un admin real, así que el
+            selector sigue visible para poder saltar entre roles o volver. */}
+        {(me.capabilities.isPlatformAdmin || me.impersonating) && (
+          <VerComo me={me} />
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="sm">

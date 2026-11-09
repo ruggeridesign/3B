@@ -1,13 +1,23 @@
-import { type AppTransaction, schema } from '@3b/db';
+import { type AppTransaction, schema, sql } from '@3b/db';
 
 export interface AdminUser {
   id: string;
   email: string;
   name: string | null;
   isPlatformAdmin: boolean;
+  // Capacidades derivadas (para el selector "Ver como" por rol). isMaker es
+  // implícito (todo usuario lo es), por eso no se incluye.
+  isSeller: boolean;
+  isMover: boolean;
+  isCommunityAdmin: boolean;
 }
 
-/** Lista usuarios (bajo RLS, solo el admin de plataforma ve a todos). */
+/**
+ * Lista usuarios con sus capacidades (bajo RLS, solo el admin de plataforma ve a
+ * todos). Las capacidades se derivan por subconsultas EXISTS: Seller = tiene
+ * membresía de tienda; Mover = perfil aprobado; admin de comunidad = membresía
+ * con rol `admin`.
+ */
 export function listUsers(db: AppTransaction): Promise<AdminUser[]> {
   return db
     .select({
@@ -15,6 +25,9 @@ export function listUsers(db: AppTransaction): Promise<AdminUser[]> {
       email: schema.users.email,
       name: schema.users.name,
       isPlatformAdmin: schema.users.isPlatformAdmin,
+      isSeller: sql<boolean>`exists (select 1 from ${schema.storeMembers} where ${schema.storeMembers.userId} = ${schema.users.id})`,
+      isMover: sql<boolean>`exists (select 1 from ${schema.moverProfiles} where ${schema.moverProfiles.userId} = ${schema.users.id} and ${schema.moverProfiles.status} = 'approved')`,
+      isCommunityAdmin: sql<boolean>`exists (select 1 from ${schema.memberships} where ${schema.memberships.userId} = ${schema.users.id} and ${schema.memberships.role} = 'admin')`,
     })
     .from(schema.users);
 }
