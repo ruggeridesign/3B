@@ -38,7 +38,10 @@ const ROLES: { key: RoleKey; label: string; hint: string }[] = [
  * sin tener que elegir usuarios a mano. Nunca impersona a otro admin de plataforma.
  * Para "Maker" prefiere un usuario que sea SOLO Maker (experiencia limpia de compra).
  */
-function pickRep(users: AdminUser[], role: RoleKey): AdminUser | undefined {
+export function pickRep(
+  users: AdminUser[],
+  role: RoleKey,
+): AdminUser | undefined {
   const notAdmin = (u: AdminUser) => !u.isPlatformAdmin;
   if (role === 'seller') return users.find((u) => notAdmin(u) && u.isSeller);
   if (role === 'mover') return users.find((u) => notAdmin(u) && u.isMover);

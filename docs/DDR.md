@@ -254,6 +254,32 @@
 
 ---
 
+## 2026-11-09 · _(este commit)_ · test — Tests de componentes web (RTL + jsdom) [Fase 2 de testing]
+
+- **Qué:** se montó Vitest + Testing Library (jsdom) en `apps/web` (antes con 0
+  tests). 13 tests en 2 archivos: **Navbar** (tabla por rol: cada usuario —
+  Maker/Seller/Mover/admin de Comunidad/admin de Plataforma— ve exactamente sus
+  espacios, y "Ver como" aparece solo para el admin real, incluso impersonando) y
+  **Ver como** (`pickRep` elige el representante correcto por rol y nunca a un admin;
+  el componente pide `/v1/admin/users` al montar).
+- **Por qué:** cubrir, rápido y sin DB, que la UI muestra **lo que corresponde a cada
+  tipo de usuario** (parte del objetivo "todas las funcionalidades para todos los
+  usuarios"). La interacción real del dropdown se cubre en E2E (fase 3).
+- **Setup:** `apps/web/vitest.config.ts` (environment jsdom, `@vitejs/plugin-react`,
+  `@3b/ui` "inline" porque se consume desde la fuente TSX), `test/setup.ts`
+  (jest-dom + cleanup + polyfills mínimos de jsdom). Los tests viven en
+  `apps/web/test/` (fuera de `app/` para no mezclarse con el ruteo de Next).
+  Fixtures de `MeResponse` por rol en `test/fixtures/me.ts`. Se exportó `pickRep`
+  de `ver-como.tsx` para testear la lógica pura directo.
+- **Impacto / archivos:** `apps/web/{vitest.config.ts,package.json}`,
+  `apps/web/test/**`, `apps/web/app/_components/ver-como.tsx` (export de `pickRep`).
+  devDeps: vitest, @vitejs/plugin-react, jsdom, @testing-library/{react,user-event,jest-dom}.
+- **Verificación:** `pnpm --filter @3b/web test` → 13/13; `pnpm check` verde (el
+  `test` de la web entra al pipeline de turbo, sin DB); `pnpm --filter @3b/web build`
+  OK (los tests, al vivir en `test/` e incluidos por tsconfig, no rompen el build).
+- **Estado para retomar:** faltan fase 3 (E2E Playwright) y 4 (checklist + CI).
+- **Relacionado:** "Ver como" por rol; fase 1 (tests de API/HTTP).
+
 ## 2026-11-09 · _(este commit)_ · test — Capa de tests de API/HTTP (routers Hono) [Fase 1 de testing]
 
 - **Qué:** nueva capa de tests de integración que ejercita la **app Hono completa

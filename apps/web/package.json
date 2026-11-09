@@ -9,6 +9,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "check:budget": "node scripts/check-budget.mjs"
   },
   "dependencies": {
@@ -25,9 +26,15 @@
   },
   "devDependencies": {
     "@serwist/turbopack": "^9.5.13",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
     "esbuild": "^0.28.2",
-    "serwist": "^9.5.13"
+    "jsdom": "^31.0.0",
+    "serwist": "^9.5.13",
+    "vitest": "^5.0.5"
   }
 }
