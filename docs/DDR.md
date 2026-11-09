@@ -41,7 +41,7 @@
   aislamiento), **M1** completo (shell + "Ver como" + CI + helpers de autorización),
   **M2** (tienda+catálogo+media; ver abajo), **M4 · Descubrimiento** (cerrado salvo
   la proyección de ranking con señales de comportamiento).
-- **M8 · PWA — EN CURSO.** **M8a + M8b + M8c + M8d.1 cerrados.** **M8a:** la web es **instalable** y
+- **M8 · PWA — EN CURSO.** **M8a + M8b + M8c + M8d.1 + M8d.2a cerrados.** **M8a:** la web es **instalable** y
   abre **offline**. Service worker con `@serwist/turbopack` (camino correcto para el build
   Turbopack de Next 16; `@serwist/next`/webpack no aplica), SW en `app/sw.ts` servido por
   `app/serwist/[path]/route.ts`, `manifest.webmanifest` (`app/manifest.ts`, crema `#f4f2e0`),
@@ -63,10 +63,13 @@
   usuario), API `GET /notifications/vapid-public-key` + `POST`/`DELETE /notifications/subscriptions`
   + `POST /notifications/test` (auto-test), handlers `push`/`notificationclick` en `app/sw.ts`,
   y UI `PushToggle` en `/ajustes` (permiso + suscribir + prueba). Claves VAPID por env (defaults
-  de dev). **Siguiente: M8d.2** — enviar push ante **eventos de dominio** (emitir al outbox +
-  worker → `notifyUser`); ahí se decide **qué eventos notifican** (producto). Luego M8e
-  (presupuesto <170 KB JS inicial / LCP < 2,5 s). Mejora futura: purgar la caché `api-v1` al
-  cerrar sesión.
+  de dev). **M8d.2a — push por evento (pipeline):** trigger `order_placed_emit` (AFTER INSERT en
+  `orders.orders`, SECURITY DEFINER) emite `order.placed` al outbox; el **worker** llama a
+  `dispatchNotification` tras drenar, que resuelve destinatarios (`storeMemberIds`), compone el
+  texto y envía push a los miembros de la tienda. **Siguiente: M8d.2b** — el resto de los eventos
+  (producto, ya elegidos): **estado de pedido → comprador**, **envío asignado → Mover + comprador
+  y entregado → comprador**, **mensaje de chat → contraparte**. Luego M8e (presupuesto <170 KB JS
+  inicial / LCP < 2,5 s). Mejora futura: purgar la caché `api-v1` al cerrar sesión.
 - **M7 · Billing + panel de comunidad — CERRADO.** **M7a/M7b/M7c/M7d** completos (módulo
   `billing` + identity/comunidad). `plans` + `subscriptions` (una por tienda; `trial` por
   trigger; la cambia un admin); `fee_accruals` (polimórfico `store`|`mover`): al `completado`
@@ -239,6 +242,45 @@
   unidad lógica; cada uno con su entrada en este DDR.
 
 ---
+
+## 2026-11-08 · _(este commit)_ · feat — M8d.2a: push por evento (pipeline outbox→worker, order.placed)
+
+- **Qué:** el pipeline completo **transición de dominio → outbox → worker → push** funcionando de
+  punta a punta con el primer evento: al crear un pedido, los **miembros de la tienda** reciben
+  una notificación push. Es la rebanada de referencia; el resto de los eventos es M8d.2b.
+- **Por qué:** M8d.1 dejó la infra de push + auto-test, pero nada enviaba por eventos reales. Las
+  transiciones de pedido ocurren por varias vías (app + triggers de pago/envío), así que se emite
+  por **trigger de DB** (confiable, transaccional) y el worker resuelve destinatarios + texto (TS).
+- **Impacto / archivos:**
+  - **DB:** migración **manual** `0041_order_placed_notify.sql` (+ journal + snapshot a mano,
+    patrón DDL puro): función `platform.emit_order_placed()` **SECURITY DEFINER** + trigger
+    `order_placed_emit` AFTER INSERT en `orders.orders` → emite `order.placed`
+    (`{orderId, storeId, buyerId, number}`) al `platform.outbox`. Definer para escribir el outbox
+    aunque inserte el rol `app` (sin grants ahí).
+  - **Core (`notifications`):** `infra/recipients-repo` (`storeMemberIds`, lee `store.store_members`
+    por `@3b/db`, sin acoplar módulos), `application/dispatch-notification` (`dispatchNotification`:
+    switch por topic → resuelve destinatarios, compone `PushPayload` y envía con `notifyUser`;
+    0 para topics no notificables). Exports nuevos en el index.
+  - **Worker:** `publish` ahora, además de publicar a Valkey, llama `dispatchNotification(db, vapid,
+    event)` (owner) y loguea cuántos push salieron. VAPID inyectado desde env.
+- **Decisiones de diseño:**
+  - **Emisión por trigger (no app-code):** fiable ante cualquier vía de creación; transaccional
+    con el pedido. El worker (owner) resuelve destinatarios/texto en TS (fuera de SQL).
+  - **Un solo drenado:** el push se envía dentro del `publish` del `drainOutbox` existente
+    (at-least-once; un reintento puede duplicar un push, costo aceptable).
+  - **Resolución vía `@3b/db` schema (no import cross-módulo):** `storeMemberIds` lee la tabla
+    compartida sin importar el módulo `store` (respeta boundaries).
+- **Verificación:** `pnpm check` **verde** (lint, typecheck 10/10, unit 19/19, boundaries **696
+  módulos**). **Migración 0041 aplicada** y `pnpm test:integration` **verde: db 6/6 + core 39
+  archivos / 135 tests** (+2: crear un pedido emite `order.placed` con los IDs correctos;
+  `storeMemberIds` resuelve a los miembros). El `outbox-drain` sigue verde (tolera eventos extra;
+  el drenado no borra, solo marca `published_at`).
+- **Estado para retomar:** **M8d.2a cerrado.** Siguiente: **M8d.2b** — agregar triggers +
+  ramas de `dispatchNotification` para: **estado de pedido → comprador** (trigger AFTER UPDATE OF
+  status en `orders.orders`), **envío asignado → Mover + comprador** y **entregado → comprador**
+  (AFTER UPDATE en `shipping.shipments`), **mensaje de chat → contraparte** (AFTER INSERT en
+  `messaging.messages`; destinatario = la otra parte del pedido). Luego M8e (presupuesto).
+- **Relacionado:** ROADMAP M8; entrada M8d.1; infra.1/infra.2 (outbox + worker).
 
 ## 2026-11-08 · _(este commit)_ · feat — M8d.1: Web Push (VAPID) — infraestructura + auto-test
 

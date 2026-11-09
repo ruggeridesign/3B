@@ -1,6 +1,7 @@
 import { loadEnv } from '@3b/config';
 import { generateStatements } from '@3b/core/modules/billing';
 import { sweepExpiredReservations } from '@3b/core/modules/inventory';
+import { dispatchNotification } from '@3b/core/modules/notifications';
 import { drainOutbox, type OutboxEvent } from '@3b/core/modules/platform';
 import { createAppDb } from '@3b/db';
 import Redis from 'ioredis';
@@ -27,10 +28,21 @@ const env = loadEnv();
 const { db, client } = createAppDb(env.DATABASE_URL);
 const valkey = new Redis(env.VALKEY_URL);
 
+// Credenciales VAPID para los push de M8d (se envían desde acá, owner).
+const vapid = {
+  publicKey: env.VAPID_PUBLIC_KEY,
+  privateKey: env.VAPID_PRIVATE_KEY,
+  subject: env.VAPID_SUBJECT,
+};
+
 valkey.on('error', (e) => console.error('[worker] valkey:', e.message));
 
 async function publish(event: OutboxEvent): Promise<void> {
+  // Rastreo en vivo y demás consumidores (Valkey pub/sub).
   await valkey.publish(event.topic, JSON.stringify(event.payload));
+  // Push a los destinatarios del evento (M8d.2; 0 para topics no notificables).
+  const sent = await dispatchNotification(db, vapid, event);
+  if (sent > 0) console.log(`[worker] push enviados (${event.topic}): ${sent}`);
 }
 
 /** Programa `fn` cada `intervalMs` sin solapar ejecuciones. Devuelve un `stop`. */

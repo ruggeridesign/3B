@@ -1,5 +1,9 @@
 // API pública del módulo notifications (M8d — Web Push / VAPID).
 
+export {
+  dispatchNotification,
+  type NotifiableEvent,
+} from './application/dispatch-notification';
 export { notifyUser } from './application/notify-user';
 export { notificationsRouter } from './http/routes';
 export {
@@ -7,6 +11,7 @@ export {
   sendPush,
   type VapidConfig,
 } from './infra/push-sender';
+export { storeMemberIds } from './infra/recipients-repo';
 export {
   deleteSubscription,
   listSubscriptionsForUser,

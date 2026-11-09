@@ -288,6 +288,13 @@
       "when": 1794182170221,
       "tag": "0040_rapid_vapor",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1794268570221,
+      "tag": "0041_order_placed_notify",
+      "breakpoints": true
     }
   ]
 }
